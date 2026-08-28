@@ -421,9 +421,17 @@ def cumulative_by_week(mu: pd.DataFrame) -> pd.DataFrame:
         games=g.cumcount() + 1,
     )
     out["cum_losses"] = out["games"] - out["cum_wins"]
-    week_means = out.groupby("week")[["cum_pf", "cum_pa"]].transform("mean")
+    # Per-game averages, so weeks are on the same scale and comparable. Totals
+    # only ever grow, which makes a week-to-week comparison meaningless.
+    out["avg_pf"] = out["cum_pf"] / out["games"]
+    out["avg_pa"] = out["cum_pa"] / out["games"]
+    week_means = out.groupby("week")[["cum_pf", "cum_pa", "avg_pf", "avg_pa"]].transform("mean")
     out["league_avg_pf"] = week_means["cum_pf"]
     out["league_avg_pa"] = week_means["cum_pa"]
+    # League PF and PA are the same pile of points, so these two are equal by
+    # construction; both are kept so each axis can name its own reference.
+    out["league_avg_ppg_for"] = week_means["avg_pf"]
+    out["league_avg_ppg_against"] = week_means["avg_pa"]
     # Quadrant, stated in plain terms. High PF is good; high PA is bad.
     out["quadrant"] = np.select(
         [
@@ -435,8 +443,9 @@ def cumulative_by_week(mu: pd.DataFrame) -> pd.DataFrame:
         default="ass",
     )
     return out[
-        ["week", "team_id", "team_name", "cum_pf", "cum_pa", "cum_wins", "cum_losses",
-         "games", "league_avg_pf", "league_avg_pa", "quadrant"]
+        ["week", "team_id", "team_name", "cum_pf", "cum_pa", "avg_pf", "avg_pa",
+         "cum_wins", "cum_losses", "games", "league_avg_pf", "league_avg_pa",
+         "league_avg_ppg_for", "league_avg_ppg_against", "quadrant"]
     ].reset_index(drop=True)
 
 
