@@ -10,7 +10,7 @@
 const NS = 'http://www.w3.org/2000/svg';
 const $ = (sel, root = document) => root.querySelector(sel);
 
-const state = { data: null, view: 'standings', teamId: null, quadWeek: null };
+const state = { data: null, seasons: [], season: null, view: 'standings', teamId: null, quadWeek: null };
 
 /* ---------------------------------------------------------------- utils */
 
@@ -800,6 +800,7 @@ function render() {
   }
   const url = new URL(location.href);
   url.searchParams.set('view', state.view);
+  if (state.season) url.searchParams.set('season', state.season);
   if (state.teamId) url.searchParams.set('team', state.teamId);
   else url.searchParams.delete('team');
   history.replaceState(null, '', url);
@@ -814,35 +815,79 @@ function applyTheme(mode) {
   $('#theme-toggle').textContent = dark ? 'Light' : 'Dark';
 }
 
-async function boot() {
-  const params = new URLSearchParams(location.search);
-  const season = params.get('season') || '2025';
+function fail(message) {
+  $('#view').innerHTML = '';
+  $('#view').appendChild(card('Could not load league data', message));
+}
+
+/* Swap in a season. team_id is stable across seasons in this league, so the
+   highlighted team survives the switch; a team that wasn't in that season
+   falls back to none. */
+async function loadSeason(year) {
   let data;
   try {
-    const res = await fetch('data/' + season + '.json');
+    const res = await fetch('data/' + year + '.json');
     if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
     data = await res.json();
   } catch (err) {
-    $('#view').appendChild(
-      card('Could not load league data', 'data/' + season + '.json failed: ' + err.message +
-        '. This page reads a JSON file, so it needs to be served over http rather than opened from disk.')
-    );
-    return;
+    fail('data/' + year + '.json failed: ' + err.message +
+      '. This page reads JSON files, so it needs to be served over http rather than opened from disk.');
+    return false;
   }
   state.data = data;
+  state.quadWeek = null;
 
-  $('#season-line').textContent = data.season + ' season · ' + data.league.team_count + ' teams · ' + data.league.weeks_played.length + ' weeks played';
+  $('#season-line').textContent =
+    data.season + ' season · ' + data.league.team_count + ' teams · ' +
+    data.league.weeks_played.length + ' weeks played';
   $('#updated-line').textContent = 'updated ' + new Date(data.generated_at).toLocaleDateString();
 
   const sel = $('#team-select');
+  const keep = state.teamId;
+  sel.innerHTML = '';
   sel.appendChild(h('option', { value: '', text: 'None (all teams equal)' }));
   for (const t of data.teams) sel.appendChild(h('option', { value: t.team_id, text: t.name }));
-  const fromUrl = params.get('team');
-  if (fromUrl && data.teams.some((t) => t.team_id === Number(fromUrl))) {
-    state.teamId = Number(fromUrl);
-    sel.value = fromUrl;
+  if (keep !== null && data.teams.some((t) => t.team_id === keep)) {
+    sel.value = String(keep);
+    state.teamId = keep;
+  } else {
+    sel.value = '';
+    state.teamId = null;
   }
-  sel.addEventListener('change', (ev) => {
+  return true;
+}
+
+async function boot() {
+  const params = new URLSearchParams(location.search);
+
+  let manifest;
+  try {
+    const res = await fetch('data/seasons.json');
+    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+    manifest = (await res.json()).seasons;
+  } catch (err) {
+    manifest = [{ season: Number(params.get('season')) || 2025 }];
+  }
+  state.seasons = manifest;
+
+  const wanted = Number(params.get('season'));
+  state.season = manifest.some((s) => s.season === wanted) ? wanted : manifest[0].season;
+
+  const seasonSel = $('#season-select');
+  for (const s of manifest) {
+    seasonSel.appendChild(h('option', { value: s.season, text: String(s.season) }));
+  }
+  seasonSel.value = String(state.season);
+  seasonSel.addEventListener('change', async (ev) => {
+    state.season = Number(ev.target.value);
+    if (await loadSeason(state.season)) render();
+  });
+
+  const team = Number(params.get('team'));
+  if (team) state.teamId = team;
+  if (!(await loadSeason(state.season))) return;
+
+  $('#team-select').addEventListener('change', (ev) => {
     state.teamId = ev.target.value ? Number(ev.target.value) : null;
     render();
   });

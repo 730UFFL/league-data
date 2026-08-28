@@ -75,6 +75,7 @@ def build(
     season: int,
     playoff_spots: int,
     n_sims: int,
+    include_owners: bool = False,
 ) -> dict:
     mu = M.validate(mu)
     weeks = sorted(int(w) for w in mu["week"].unique())
@@ -100,9 +101,12 @@ def build(
             {
                 "team_id": int(tid),
                 "name": name,
+                # Real names of league members, off by default: the published
+                # JSON is world-readable once the site deploys, and team_id is
+                # already stable across seasons for cross-season identity.
                 "owner": (
                     str(teams.loc[teams.team_id == tid, "owner"].iloc[0])
-                    if teams is not None and (teams.team_id == tid).any()
+                    if include_owners and teams is not None and (teams.team_id == tid).any()
                     else ""
                 ),
             }
@@ -136,6 +140,32 @@ def build(
     return payload
 
 
+def write_manifest(data_dir: Path) -> None:
+    """List the seasons the site can offer, newest first."""
+    seasons = []
+    for path in sorted(data_dir.glob("*.json")):
+        if path.name == "seasons.json":
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if "season" not in payload:
+            continue
+        seasons.append(
+            {
+                "season": payload["season"],
+                "teams": payload["league"]["team_count"],
+                "weeks": len(payload["league"]["weeks_played"]),
+                "generated_at": payload.get("generated_at"),
+            }
+        )
+    seasons.sort(key=lambda s: s["season"], reverse=True)
+    (data_dir / "seasons.json").write_text(
+        json.dumps({"seasons": seasons}, separators=(",", ":")), encoding="utf-8"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Build site/data/{season}.json")
     parser.add_argument("--season", type=int, default=None)
@@ -143,6 +173,11 @@ def main() -> None:
     parser.add_argument("--playoff-spots", type=int, default=6)
     parser.add_argument("--sims", type=int, default=5000)
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument(
+        "--include-owners",
+        action="store_true",
+        help="write league members' real names into the published JSON (off by default)",
+    )
     args = parser.parse_args()
 
     season = args.season or (2025 if args.legacy else None)
@@ -152,11 +187,14 @@ def main() -> None:
         season = load_config().season
 
     mu, schedule, teams = load_season(season, legacy=args.legacy)
-    payload = build(mu, schedule, teams, season, args.playoff_spots, args.sims)
+    payload = build(mu, schedule, teams, season, args.playoff_spots, args.sims,
+                    include_owners=args.include_owners)
 
     out = args.out or (SITE_DATA_DIR / f"{season}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, indent=None, separators=(",", ":")), encoding="utf-8")
+
+    write_manifest(out.parent)
 
     size_kb = out.stat().st_size / 1024
     print(f"wrote {out} ({size_kb:.0f} KB)")
