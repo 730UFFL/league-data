@@ -10,7 +10,7 @@
 const NS = 'http://www.w3.org/2000/svg';
 const $ = (sel, root = document) => root.querySelector(sel);
 
-const state = { data: null, view: 'standings', teamId: null, quadWeek: null, quadFit: 'all' };
+const state = { data: null, view: 'standings', teamId: null, quadWeek: null };
 
 /* ---------------------------------------------------------------- utils */
 
@@ -685,39 +685,20 @@ views.quadrants = () => {
     h('select', {
       id: 'quad-week',
       onchange: (ev) => { state.quadWeek = Number(ev.target.value); render(); },
-    }, weeks.map((w) => h('option', { value: w, selected: w === week ? 'selected' : null, text: 'Week ' + w }))),
-    h('label', { for: 'quad-fit', text: 'Scale' }),
-    h('select', {
-      id: 'quad-fit',
-      onchange: (ev) => { state.quadFit = ev.target.value; render(); },
-    },
-      h('option', { value: 'all', selected: state.quadFit === 'week' ? null : 'selected', text: 'Fixed (compare weeks)' }),
-      h('option', { value: 'week', selected: state.quadFit === 'week' ? 'selected' : null, text: 'Fit to this week' }))
+    }, weeks.map((w) => h('option', { value: w, selected: w === week ? 'selected' : null, text: 'Week ' + w })))
   );
 
-  const f = frame(720, 470, { left: 56, right: 24, bottom: 48, top: 16 });
+  const f = frame(720, 460, { left: 56, right: 24, bottom: 44, top: 16 });
+  const pf = pts.map((p) => p.cum_pf), pa = pts.map((p) => p.cum_pa);
+  const padX = (Math.max(...pf) - Math.min(...pf)) * 0.12 || 10;
+  const padY = (Math.max(...pa) - Math.min(...pa)) * 0.12 || 10;
+  const x = linear([Math.min(...pf) - padX, Math.max(...pf) + padX], [0, f.plotW]);
+  /* PA increases downward: lower on the chart is a worse defence. */
+  const y = linear([Math.min(...pa) - padY, Math.max(...pa) + padY], [0, f.plotH]);
+  const avgPf = pts[0].league_avg_pf, avgPa = pts[0].league_avg_pa;
 
-  /* Per-game averages, on one domain shared by both axes and by every week.
-     Totals only ever grow, so week-to-week comparison needs averages; a domain
-     refitted per week would still slide the dots for reasons that are not
-     about the data. Both axes carry the same unit, and league points-for per
-     game always equals league points-against per game, so one square domain
-     puts the league average at a true centre. The union is recomputed on every
-     refresh; in practice it settles within about four weeks. */
-  const scope = state.quadFit === 'week' ? pts : state.data.quad;
-  const lo = Math.min(...scope.map((p) => Math.min(p.avg_pf, p.avg_pa)));
-  const hi = Math.max(...scope.map((p) => Math.max(p.avg_pf, p.avg_pa)));
-  const pad = (hi - lo) * 0.08 || 5;
-  const dom = [lo - pad, hi + pad];
-
-  const x = linear(dom, [0, f.plotW]);
-  /* PA increases downward, so up and to the right stays "good". */
-  const y = linear(dom, [0, f.plotH]);
-  const avgPf = pts[0].league_avg_ppg_for, avgPa = pts[0].league_avg_ppg_against;
-
-  const ticks = niceTicks(dom[0], dom[1], 5);
-  gridX(f.g, x, ticks, f.plotH, (t) => fmt(t, 0));
-  gridY(f.g, y, ticks, f.plotW, (t) => fmt(t, 0));
+  gridX(f.g, x, niceTicks(Math.min(...pf) - padX, Math.max(...pf) + padX, 5), f.plotH, (t) => fmt(t, 0));
+  gridY(f.g, y, niceTicks(Math.min(...pa) - padY, Math.max(...pa) + padY, 5), f.plotW, (t) => fmt(t, 0));
 
   f.g.appendChild(el('line', { class: 'baseline', x1: x(avgPf), x2: x(avgPf), y1: 0, y2: f.plotH }));
   f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: y(avgPa), y2: y(avgPa) }));
@@ -732,7 +713,7 @@ views.quadrants = () => {
   const quadLabels = [];
   for (const p of pts) {
     const sel = isSel(p.team_id);
-    const cx = x(p.avg_pf), cy = y(p.avg_pa);
+    const cx = x(p.cum_pf), cy = y(p.cum_pa);
     f.g.appendChild(el('circle', {
       cx, cy, r: sel ? 7 : 5,
       fill: markColor(p.team_id),
@@ -746,24 +727,23 @@ views.quadrants = () => {
     const hit = el('circle', { class: 'hit', cx, cy, r: 14 });
     hoverable(hit, teamName(p.team_id), [
       'Through week ' + week + ': <b>' + rec(p.cum_wins, p.cum_losses) + '</b>',
-      'For <b>' + fmt(p.avg_pf, 1) + '</b>/gm (' + fmt(p.cum_pf, 1) + ' total)',
-      'Against <b>' + fmt(p.avg_pa, 1) + '</b>/gm (' + fmt(p.cum_pa, 1) + ' total)',
+      'Points for <b>' + fmt(p.cum_pf, 1) + '</b>',
+      'Points against <b>' + fmt(p.cum_pa, 1) + '</b>',
     ]);
     f.g.appendChild(hit);
   }
-  f.g.appendChild(el('text', { class: 'axis-label', x: f.plotW / 2, y: f.plotH + 34, 'text-anchor': 'middle' }, 'Points for per game →'));
-  f.g.appendChild(el('text', { class: 'axis-label', x: -f.plotH / 2, y: -38, transform: 'rotate(-90)', 'text-anchor': 'middle' }, '← Points against per game'));
+  f.g.appendChild(el('text', { class: 'axis-label', x: f.plotW / 2, y: f.plotH + 34, 'text-anchor': 'middle' }, 'Points for →'));
+  f.g.appendChild(el('text', { class: 'axis-label', x: -f.plotH / 2, y: -38, transform: 'rotate(-90)', 'text-anchor': 'middle' }, '← Points against'));
   onMount(f.svg, () => decollide(quadLabels, { height: f.plotH }));
 
   wrap.appendChild(
     card('Quadrants',
-      'Points for and against per game through the selected week. Both axes share one scale across every week, so a dot in week 4 sits where it would in week 13 — watch the cloud converge as the sample grows.',
+      'Cumulative points for and against through the selected week, against the league average in each. All dots share one color — the quadrant is already carried by position.',
       slider, f.svg,
-      detailsTable('Table view', ['Team', 'PF/gm', 'PA/gm', 'PF', 'PA', 'Record', 'Quadrant'],
-        pts.slice().sort((a, b) => b.avg_pf - a.avg_pf).map((p) => ({
+      detailsTable('Table view', ['Team', 'PF', 'PA', 'Record', 'Quadrant'],
+        pts.slice().sort((a, b) => b.cum_pf - a.cum_pf).map((p) => ({
           selected: isSel(p.team_id),
-          cells: [teamName(p.team_id), fmt(p.avg_pf, 1), fmt(p.avg_pa, 1),
-                  fmt(p.cum_pf, 1), fmt(p.cum_pa, 1), rec(p.cum_wins, p.cum_losses), p.quadrant],
+          cells: [teamName(p.team_id), fmt(p.cum_pf, 1), fmt(p.cum_pa, 1), rec(p.cum_wins, p.cum_losses), p.quadrant],
         }))))
   );
   return wrap;
