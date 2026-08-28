@@ -1,0 +1,866 @@
+/* 730UFFL - static site. No build step, no dependencies.
+   Reads site/data/{season}.json; every metric is precomputed by pipeline/.
+
+   Twelve teams is well past the eight-slot categorical ceiling, so no chart
+   here assigns a hue per team. Multi-team charts use emphasis: the selected
+   team in the accent, everyone else in context gray. */
+
+'use strict';
+
+const NS = 'http://www.w3.org/2000/svg';
+const $ = (sel, root = document) => root.querySelector(sel);
+
+const state = { data: null, view: 'standings', teamId: null, quadWeek: null };
+
+/* ---------------------------------------------------------------- utils */
+
+const fmt = (n, dp = 1) =>
+  n === null || n === undefined || Number.isNaN(n) ? '–' : Number(n).toFixed(dp);
+const signed = (n, dp = 2) => (n > 0 ? '+' : '') + fmt(n, dp);
+const pct = (n, dp = 0) => fmt(n * 100, dp) + '%';
+const rec = (w, l) => w + '‑' + l;
+
+function el(name, attrs, ...kids) {
+  const node = document.createElementNS(NS, name);
+  for (const k in attrs || {}) {
+    if (attrs[k] !== null && attrs[k] !== undefined) node.setAttribute(k, attrs[k]);
+  }
+  for (const kid of kids.flat()) {
+    if (kid === null || kid === undefined) continue;
+    node.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+  }
+  return node;
+}
+
+function h(tag, attrs, ...kids) {
+  const node = document.createElement(tag);
+  for (const k in attrs || {}) {
+    const v = attrs[k];
+    if (v === null || v === undefined) continue;
+    if (k === 'class') node.className = v;
+    else if (k === 'text') node.textContent = v;
+    else if (k.slice(0, 2) === 'on') node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid === null || kid === undefined) continue;
+    node.appendChild(typeof kid === 'string' ? document.createTextNode(kid) : kid);
+  }
+  return node;
+}
+
+const teamName = (id) => {
+  const t = state.data.teams.find((x) => x.team_id === id);
+  return t ? t.name : String(id);
+};
+const shortName = (id, max) => {
+  const n = teamName(id);
+  const cap = max || 16;
+  return n.length > cap ? n.slice(0, cap - 1).trimEnd() + '…' : n;
+};
+const isSel = (id) => id === state.teamId;
+const markColor = (id) => (isSel(id) ? 'var(--accent)' : 'var(--context)');
+
+/* ---------------------------------------------------------------- tooltip */
+
+const tip = {
+  node: null,
+  show(x, y, title, rows) {
+    if (!this.node) this.node = $('#tooltip');
+    this.node.innerHTML = '';
+    this.node.appendChild(h('div', { class: 't-title', text: title }));
+    for (const r of rows) {
+      const row = h('div', { class: 't-row' });
+      row.innerHTML = r;
+      this.node.appendChild(row);
+    }
+    this.node.classList.add('on');
+    const box = this.node.getBoundingClientRect();
+    this.node.style.left =
+      Math.min(Math.max(8, x + 14), window.innerWidth - box.width - 8) + 'px';
+    this.node.style.top =
+      Math.min(Math.max(8, y - box.height - 12), window.innerHeight - box.height - 8) + 'px';
+  },
+  hide() {
+    if (this.node) this.node.classList.remove('on');
+  },
+};
+
+/* Hover, and the same content on keyboard focus. */
+function hoverable(node, title, rows) {
+  const show = (ev) => {
+    const r = node.getBoundingClientRect();
+    tip.show(
+      ev.clientX === undefined ? r.left + r.width / 2 : ev.clientX,
+      ev.clientY === undefined ? r.top : ev.clientY,
+      title,
+      rows
+    );
+  };
+  node.addEventListener('mousemove', show);
+  node.addEventListener('mouseenter', show);
+  node.addEventListener('mouseleave', () => tip.hide());
+  node.addEventListener('focus', show);
+  node.addEventListener('blur', () => tip.hide());
+  node.setAttribute('tabindex', '0');
+  node.setAttribute('role', 'img');
+  node.setAttribute('aria-label', title + '. ' + rows.join('. ').replace(/<[^>]+>/g, ''));
+  return node;
+}
+
+/* ---------------------------------------------------------------- scales */
+
+function linear(domain, range) {
+  const d0 = domain[0], d1 = domain[1], r0 = range[0], r1 = range[1];
+  const span = d1 - d0 || 1;
+  const f = (v) => r0 + ((v - d0) / span) * (r1 - r0);
+  f.domain = domain;
+  return f;
+}
+
+function niceTicks(min, max, count) {
+  const span = max - min || 1;
+  const raw = span / (count || 5);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  const step = (norm >= 7.5 ? 10 : norm >= 3 ? 5 : norm >= 1.5 ? 2 : 1) * mag;
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + 1e-9; v += step) {
+    out.push(Math.abs(v) < 1e-9 ? 0 : +v.toFixed(10));
+  }
+  return out;
+}
+
+/* ---------------------------------------------------------------- frame */
+
+function frame(width, height, m) {
+  const margin = Object.assign({ top: 12, right: 20, bottom: 34, left: 48 }, m || {});
+  const plotW = width - margin.left - margin.right;
+  const plotH = height - margin.top - margin.bottom;
+  const svg = el('svg', {
+    class: 'chart',
+    viewBox: '0 0 ' + width + ' ' + height,
+    preserveAspectRatio: 'xMidYMid meet',
+    role: 'group',
+  });
+  const g = el('g', { transform: 'translate(' + margin.left + ',' + margin.top + ')' });
+  svg.appendChild(g);
+  return { svg, g, margin, plotW, plotH };
+}
+
+function gridX(g, x, ticks, plotH, format) {
+  const f = format || String;
+  for (const t of ticks) {
+    g.appendChild(el('line', { class: 'tick-line', x1: x(t), x2: x(t), y1: 0, y2: plotH }));
+    g.appendChild(
+      el('text', { class: 'axis-label', x: x(t), y: plotH + 16, 'text-anchor': 'middle' }, f(t))
+    );
+  }
+}
+
+function gridY(g, y, ticks, plotW, format) {
+  const f = format || String;
+  for (const t of ticks) {
+    g.appendChild(el('line', { class: 'tick-line', x1: 0, x2: plotW, y1: y(t), y2: y(t) }));
+    g.appendChild(
+      el('text', { class: 'axis-label', x: -8, y: y(t) + 4, 'text-anchor': 'end' }, f(t))
+    );
+  }
+}
+
+/* Text can only be measured once it is in the document, so charts register a
+   fixup that render() runs after mounting. */
+function onMount(svg, fn) {
+  svg.__fixup = fn;
+  return svg;
+}
+
+/* Push apart labels that collide, alternating down then up, clamped to the
+   plot. Twelve teams in a scatter will always crowd somewhere. */
+function decollide(nodes, bounds) {
+  const items = nodes.map((n) => ({ n, y0: parseFloat(n.getAttribute('y')), dy: 0 }));
+  const boxOf = (it) => {
+    const b = it.n.getBBox();
+    return { x1: b.x, x2: b.x + b.width, y1: b.y, y2: b.y + b.height };
+  };
+  items.sort((a, b) => boxOf(a).y1 - boxOf(b).y1);
+  for (let pass = 0; pass < 12; pass++) {
+    let moved = false;
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const A = boxOf(items[i]), B = boxOf(items[j]);
+        const hit = A.x1 < B.x2 && B.x1 < A.x2 && A.y1 < B.y2 && B.y1 < A.y2;
+        if (!hit) continue;
+        const push = A.y2 - B.y1 + 2;
+        const target = items[j];
+        const down = target.y0 + target.dy + push;
+        if (down + 4 < bounds.height) target.dy += push;
+        else items[i].dy -= push;
+        for (const t of [items[i], items[j]]) {
+          const y = Math.max(10, Math.min(bounds.height - 2, t.y0 + t.dy));
+          t.n.setAttribute('y', y);
+        }
+        moved = true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+function legend(items) {
+  const box = h('div', { class: 'legend' });
+  for (const it of items) {
+    box.appendChild(
+      h('span', { class: 'key' }, h('span', { class: 'swatch', style: 'background:' + it[1] }), it[0])
+    );
+  }
+  return box;
+}
+
+function card(title, note, ...body) {
+  return h(
+    'section',
+    { class: 'card' },
+    h('h2', { text: title }),
+    note ? h('p', { class: 'note', text: note }) : null,
+    ...body
+  );
+}
+
+function caption(text) {
+  return h('p', { class: 'caption', text: text });
+}
+
+function tableEl(headers, rows) {
+  const table = h('table');
+  table.appendChild(
+    h('thead', {}, h('tr', {}, headers.map((x, i) => h('th', { class: i ? '' : 'left', text: x }))))
+  );
+  const tbody = h('tbody');
+  for (const r of rows) {
+    const tr = h('tr', r.selected ? { class: 'is-selected' } : {});
+    r.cells.forEach((c, i) => {
+      const cell = c !== null && typeof c === 'object' ? c : { text: String(c) };
+      const cls = [i ? '' : 'left', cell.cls || ''].join(' ').trim();
+      tr.appendChild(h('td', { class: cls, text: cell.text }));
+    });
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+  return h('div', { class: 'table-wrap' }, table);
+}
+
+function detailsTable(summary, headers, rows) {
+  return h('details', { class: 'table-view' }, h('summary', { text: summary }), tableEl(headers, rows));
+}
+
+function tile(label, value, detail) {
+  return h(
+    'div',
+    { class: 'tile' },
+    h('div', { class: 'label', text: label }),
+    h('div', { class: 'value', text: value }),
+    detail ? h('div', { class: 'detail', text: detail }) : null
+  );
+}
+
+/* ---------------------------------------------------------------- charts */
+
+/* Horizontal diverging bars around a zero baseline. */
+function divergingBars(rows, opts) {
+  const o = Object.assign({ dp: 2, unit: '', rowH: 26, labelW: 150 }, opts || {});
+  const height = rows.length * o.rowH + 46;
+  const width = 720;
+  const f = frame(width, height, { left: o.labelW, right: 56, bottom: 26, top: 8 });
+  const max = Math.max(...rows.map((r) => Math.abs(r.value)), 0.001) * 1.15;
+  const x = linear([-max, max], [0, f.plotW]);
+  const valueLabels = [];
+  gridX(f.g, x, niceTicks(-max, max, 5), rows.length * o.rowH, (t) => fmt(t, 0));
+
+  rows.forEach((r, i) => {
+    const y = i * o.rowH + 4;
+    const bh = o.rowH - 12;
+    const zero = x(0);
+    const end = x(r.value);
+    const left = Math.min(zero, end);
+    const w = Math.max(Math.abs(end - zero), 1.5);
+    const positive = r.value >= 0;
+
+    f.g.appendChild(
+      el('text', {
+        class: 'mark-label' + (isSel(r.team_id) ? ' strong' : ''),
+        x: -10,
+        y: y + bh / 2 + 4,
+        'text-anchor': 'end',
+      }, shortName(r.team_id, 20))
+    );
+
+    const bar = el('rect', {
+      x: left, y, width: w, height: bh, rx: 4,
+      fill: positive ? 'var(--pole-pos)' : 'var(--pole-neg)',
+      opacity: isSel(r.team_id) || !state.teamId ? 1 : 0.45,
+    });
+    f.g.appendChild(bar);
+
+    const valLabel = el('text', {
+      class: 'mark-label',
+      x: positive ? end + 8 : end - 8,
+      y: y + bh / 2 + 4,
+      'text-anchor': positive ? 'start' : 'end',
+    }, signed(r.value, o.dp) + o.unit);
+    f.g.appendChild(valLabel);
+    valueLabels.push({ node: valLabel, end, positive });
+
+    const hit = el('rect', { class: 'hit', x: -o.labelW, y: y - 4, width: f.plotW + o.labelW, height: o.rowH });
+    hoverable(hit, teamName(r.team_id), r.rows);
+    f.g.appendChild(hit);
+  });
+
+  f.g.appendChild(el('line', { class: 'baseline', x1: x(0), x2: x(0), y1: 0, y2: rows.length * o.rowH }));
+
+  /* The longest bar reaches the plot edge, so its value would sit in the team
+     name gutter. Flip those labels inside the bar end. */
+  return onMount(f.svg, () => {
+    for (const L of valueLabels) {
+      const w = L.node.getComputedTextLength();
+      if (L.positive && L.end + 8 + w > f.plotW) {
+        L.node.setAttribute('x', L.end - 8);
+        L.node.setAttribute('text-anchor', 'end');
+      } else if (!L.positive && L.end - 8 - w < 0) {
+        L.node.setAttribute('x', L.end + 8);
+        L.node.setAttribute('text-anchor', 'start');
+      }
+    }
+  });
+}
+
+/* Two values per row joined by a rule - one hue, two shades. */
+function dumbbell(rows, opts) {
+  const o = Object.assign({ rowH: 26, labelW: 150, format: (v) => fmt(v, 0) }, opts || {});
+  const height = rows.length * o.rowH + 46;
+  const f = frame(720, height, { left: o.labelW, right: 60, bottom: 26, top: 8 });
+  const all = rows.flatMap((r) => [r.a, r.b]);
+  const lo = Math.min(...all), hi = Math.max(...all);
+  const pad = (hi - lo) * 0.12 || 1;
+  const x = linear([lo - pad, hi + pad], [0, f.plotW]);
+  gridX(f.g, x, niceTicks(lo - pad, hi + pad, 5), rows.length * o.rowH, o.format);
+
+  rows.forEach((r, i) => {
+    const y = i * o.rowH + o.rowH / 2 - 4;
+    const dim = state.teamId && !isSel(r.team_id) ? 0.5 : 1;
+    f.g.appendChild(
+      el('text', {
+        class: 'mark-label' + (isSel(r.team_id) ? ' strong' : ''),
+        x: -10, y: y + 4, 'text-anchor': 'end',
+      }, shortName(r.team_id, 20))
+    );
+    f.g.appendChild(
+      el('line', { x1: x(r.a), x2: x(r.b), y1: y, y2: y, stroke: 'var(--axis)', 'stroke-width': 2, opacity: dim })
+    );
+    f.g.appendChild(el('circle', { cx: x(r.a), cy: y, r: 5, fill: 'var(--seq-250)', stroke: 'var(--surface-1)', 'stroke-width': 2, opacity: dim }));
+    f.g.appendChild(el('circle', { cx: x(r.b), cy: y, r: 5, fill: 'var(--seq-550)', stroke: 'var(--surface-1)', 'stroke-width': 2, opacity: dim }));
+    const hit = el('rect', { class: 'hit', x: -o.labelW, y: i * o.rowH, width: f.plotW + o.labelW, height: o.rowH });
+    hoverable(hit, teamName(r.team_id), r.rows);
+    f.g.appendChild(hit);
+  });
+  return f.svg;
+}
+
+/* worst .. best range with the actual result marked inside it. */
+function rangeBars(rows) {
+  const rowH = 30, labelW = 150;
+  const f = frame(720, rows.length * rowH + 48, { left: labelW, right: 40, bottom: 28, top: 8 });
+  const lo = Math.min(...rows.map((r) => r.lo));
+  const hi = Math.max(...rows.map((r) => r.hi));
+  const x = linear([lo - 0.5, hi + 0.5], [0, f.plotW]);
+  gridX(f.g, x, niceTicks(lo, hi, 6), rows.length * rowH, (t) => fmt(t, 0));
+
+  rows.forEach((r, i) => {
+    const y = i * rowH + rowH / 2 - 4;
+    const dim = state.teamId && !isSel(r.team_id) ? 0.45 : 1;
+    f.g.appendChild(
+      el('text', { class: 'mark-label' + (isSel(r.team_id) ? ' strong' : ''), x: -10, y: y + 4, 'text-anchor': 'end' },
+        shortName(r.team_id, 20))
+    );
+    f.g.appendChild(
+      el('rect', {
+        x: x(r.lo), y: y - 6, width: Math.max(x(r.hi) - x(r.lo), 2), height: 12, rx: 4,
+        fill: 'var(--seq-100)', opacity: dim,
+      })
+    );
+    f.g.appendChild(
+      el('circle', { cx: x(r.actual), cy: y, r: 6, fill: markColor(r.team_id), stroke: 'var(--surface-1)', 'stroke-width': 2, opacity: dim })
+    );
+    const hit = el('rect', { class: 'hit', x: -labelW, y: i * rowH, width: f.plotW + labelW, height: rowH });
+    hoverable(hit, teamName(r.team_id), r.rows);
+    f.g.appendChild(hit);
+  });
+  return f.svg;
+}
+
+/* Multi-line over weeks - one team emphasised, the rest context gray. */
+function emphasisLines(series, opts) {
+  const o = Object.assign({ invertY: false, height: 380, yLabel: '', format: (v) => fmt(v, 0) }, opts || {});
+  const f = frame(720, o.height, { left: 44, right: 108, bottom: 34, top: 10 });
+  const weeks = series[0].points.map((p) => p.x);
+  const vals = series.flatMap((s) => s.points.map((p) => p.y));
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = (hi - lo) * 0.08 || 1;
+  lo -= pad; hi += pad;
+  const x = linear([Math.min(...weeks), Math.max(...weeks)], [0, f.plotW]);
+  const y = o.invertY ? linear([lo, hi], [0, f.plotH]) : linear([lo, hi], [f.plotH, 0]);
+
+  gridY(f.g, y, niceTicks(lo, hi, 5), f.plotW, o.format);
+  for (const w of weeks) {
+    f.g.appendChild(el('text', { class: 'axis-label', x: x(w), y: f.plotH + 18, 'text-anchor': 'middle' }, String(w)));
+  }
+  f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: f.plotH, y2: f.plotH }));
+
+  const path = (s) => s.points.map((p, i) => (i ? 'L' : 'M') + x(p.x) + ' ' + y(p.y)).join(' ');
+  const context = series.filter((s) => !isSel(s.team_id));
+  const focus = series.filter((s) => isSel(s.team_id));
+
+  for (const s of context) {
+    f.g.appendChild(el('path', { d: path(s), fill: 'none', stroke: 'var(--context)', 'stroke-width': 1.5, opacity: state.teamId ? 0.5 : 0.8 }));
+  }
+  for (const s of focus) {
+    f.g.appendChild(el('path', { d: path(s), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2.5 }));
+    for (const p of s.points) {
+      f.g.appendChild(el('circle', { cx: x(p.x), cy: y(p.y), r: 4, fill: 'var(--accent)', stroke: 'var(--surface-1)', 'stroke-width': 2 }));
+    }
+  }
+
+  /* Direct-label the emphasised line plus the two extremes; never every line. */
+  const labelled = new Set();
+  const last = (s) => s.points[s.points.length - 1];
+  const ranked = series.slice().sort((a, b) => last(a).y - last(b).y);
+  const picks = [focus[0], ranked[0], ranked[ranked.length - 1]].filter(Boolean);
+  for (const s of picks) {
+    if (labelled.has(s.team_id)) continue;
+    labelled.add(s.team_id);
+    const p = last(s);
+    f.g.appendChild(
+      el('text', {
+        class: 'mark-label' + (isSel(s.team_id) ? ' strong' : ''),
+        x: x(p.x) + 8, y: y(p.y) + 4,
+      }, shortName(s.team_id, 14))
+    );
+  }
+
+  /* Crosshair: nearest week, all teams in the tooltip. */
+  const crosshair = el('line', { class: 'baseline', x1: 0, x2: 0, y1: 0, y2: f.plotH, opacity: 0 });
+  f.g.appendChild(crosshair);
+  const overlay = el('rect', { class: 'hit', x: 0, y: 0, width: f.plotW, height: f.plotH });
+  overlay.addEventListener('mousemove', (ev) => {
+    const box = overlay.getBoundingClientRect();
+    const rel = ((ev.clientX - box.left) / box.width) * f.plotW;
+    let best = weeks[0], bestD = Infinity;
+    for (const w of weeks) {
+      const d = Math.abs(x(w) - rel);
+      if (d < bestD) { bestD = d; best = w; }
+    }
+    crosshair.setAttribute('x1', x(best));
+    crosshair.setAttribute('x2', x(best));
+    crosshair.setAttribute('opacity', 1);
+    const at = series
+      .map((s) => ({ s, p: s.points.find((p) => p.x === best) }))
+      .filter((r) => r.p)
+      .sort((a, b) => (o.invertY ? a.p.y - b.p.y : b.p.y - a.p.y))
+      .slice(0, 6)
+      .map((r) => (isSel(r.s.team_id) ? '<b>' : '') + shortName(r.s.team_id, 18) + ' ' + o.format(r.p.y) + (isSel(r.s.team_id) ? '</b>' : ''));
+    tip.show(ev.clientX, ev.clientY, 'Week ' + best, at);
+  });
+  overlay.addEventListener('mouseleave', () => { crosshair.setAttribute('opacity', 0); tip.hide(); });
+  f.g.appendChild(overlay);
+  return f.svg;
+}
+
+/* ---------------------------------------------------------------- views */
+
+const views = {};
+
+views.standings = () => {
+  const st = state.data.standings;
+  const wrap = document.createDocumentFragment();
+
+  const lucky = st.slice().sort((a, b) => b.wins_above_expected - a.wins_above_expected)[0];
+  const unlucky = st.slice().sort((a, b) => a.wins_above_expected - b.wins_above_expected)[0];
+  const top = st[0];
+
+  wrap.appendChild(
+    h('div', { class: 'tiles' },
+      tile('League leader', rec(top.wins, top.losses), teamName(top.team_id)),
+      tile('Luckiest', signed(lucky.wins_above_expected) + ' wins', teamName(lucky.team_id) + ' · ' + rec(lucky.wins, lucky.losses)),
+      tile('Unluckiest', signed(unlucky.wins_above_expected) + ' wins', teamName(unlucky.team_id) + ' · ' + rec(unlucky.wins, unlucky.losses))
+    )
+  );
+
+  const rows = st.map((r) => ({
+    selected: isSel(r.team_id),
+    cells: [
+      r.rank + '. ' + teamName(r.team_id),
+      rec(r.wins, r.losses),
+      fmt(r.points_for, 1),
+      fmt(r.points_against, 1),
+      rec(r.ap_wins, r.ap_losses),
+      rec(r.median_wins, r.median_losses),
+      fmt(r.avg_score, 1),
+      fmt(r.score_sd, 1),
+    ],
+  }));
+
+  wrap.appendChild(
+    card('Standings', 'Record vs. all is every team’s result against all eleven other teams each week. Median record is the same idea against the weekly median.',
+      tableEl(['Team', 'Record', 'PF', 'PA', 'Record vs. all', 'Median', 'Avg', 'SD'], rows))
+  );
+
+  const db = st.slice().sort((a, b) => b.all_play_pct - a.all_play_pct).map((r) => ({
+    team_id: r.team_id,
+    a: r.win_pct * 100,
+    b: r.all_play_pct * 100,
+    rows: [
+      'Actual <b>' + pct(r.win_pct) + '</b> (' + rec(r.wins, r.losses) + ')',
+      'All-play <b>' + pct(r.all_play_pct) + '</b> (' + rec(r.ap_wins, r.ap_losses) + ')',
+    ],
+  }));
+
+  wrap.appendChild(
+    card('Real record vs. all-play record',
+      'A long connector means the schedule, not the scoring, decided the record.',
+      legend([['Actual win %', 'var(--seq-250)'], ['All-play win %', 'var(--seq-550)']]),
+      dumbbell(db, { format: (v) => fmt(v, 0) + '%' }))
+  );
+  return wrap;
+};
+
+views.expected = () => {
+  const st = state.data.standings;
+  const wrap = document.createDocumentFragment();
+
+  const wae = st.slice().sort((a, b) => b.wins_above_expected - a.wins_above_expected).map((r) => ({
+    team_id: r.team_id,
+    value: r.wins_above_expected,
+    rows: [
+      'Actual <b>' + r.wins + '</b> wins',
+      'Expected <b>' + fmt(r.expected_wins, 2) + '</b>',
+      'Probability <b>' + pct(r.luck_probability, 1) + '</b>',
+    ],
+  }));
+
+  wrap.appendChild(
+    card('Wins above expected',
+      'Expected wins is the sum of weekly all-play win percentages — the number of wins a team’s scoring earns against a random opponent each week.',
+      legend([['Above expectation', 'var(--pole-pos)'], ['Below expectation', 'var(--pole-neg)']]),
+      divergingBars(wae, { dp: 2 }),
+      caption('Positive means the schedule handed a team wins its scoring did not earn.'))
+  );
+
+  const rows = st.slice().sort((a, b) => b.expected_wins - a.expected_wins).map((r) => ({
+    selected: isSel(r.team_id),
+    cells: [
+      teamName(r.team_id),
+      rec(r.wins, r.losses),
+      fmt(r.expected_wins, 2),
+      { text: signed(r.wins_above_expected), cls: r.wins_above_expected > 0 ? 'pos' : r.wins_above_expected < 0 ? 'neg' : '' },
+      pct(r.luck_probability, 1),
+      fmt(r.expected_wins_sd, 2),
+    ],
+  }));
+  wrap.appendChild(
+    card('Expected wins',
+      'Probability is how ordinary a record is given the scoring behind it — near 100% means the record fits, near 0% means the schedule produced it.',
+      tableEl(['Team', 'Record', 'Expected', 'Above exp.', 'Probability', 'SD'], rows))
+  );
+
+  const sos = st.slice().sort((a, b) => b.sos - a.sos).map((r) => ({
+    team_id: r.team_id,
+    value: r.sos,
+    rows: [
+      'Opponent PPG <b>' + fmt(r.opponent_ppg, 1) + '</b>',
+      'League PPG <b>' + fmt(r.league_ppg, 1) + '</b>',
+    ],
+  }));
+  wrap.appendChild(
+    card('Strength of schedule',
+      'Average opponent points per game against the league average, in points. Opponent win percentage would inherit those opponents’ own luck; points do not.',
+      legend([['Harder schedule', 'var(--pole-pos)'], ['Easier schedule', 'var(--pole-neg)']]),
+      divergingBars(sos, { dp: 1, unit: ' pts' }))
+  );
+  return wrap;
+};
+
+views.schedule = () => {
+  const sw = state.data.schedule_swap;
+  const wrap = document.createDocumentFragment();
+  const spread = sw.summary.slice().sort((a, b) => (b.best_wins - b.worst_wins) - (a.best_wins - a.worst_wins));
+  const worst = spread[0];
+
+  wrap.appendChild(
+    h('div', { class: 'tiles' },
+      tile('Most schedule-dependent', worst ? teamName(worst.team_id) : '–',
+        worst ? rec(worst.actual_wins, worst.actual_losses) + ' actual, ' + worst.worst_wins + '–' + worst.best_wins + ' wins possible' : '')
+    )
+  );
+
+  const rows = sw.summary.slice().sort((a, b) => b.actual_wins - a.actual_wins).map((r) => ({
+    team_id: r.team_id,
+    lo: r.worst_wins,
+    hi: r.best_wins,
+    actual: r.actual_wins,
+    rows: [
+      'Actual <b>' + rec(r.actual_wins, r.actual_losses) + '</b>',
+      'Best <b>' + rec(r.best_wins, r.best_losses) + '</b> on ' + r.best_schedule_owner + '’s schedule',
+      'Worst <b>' + rec(r.worst_wins, r.worst_losses) + '</b> on ' + r.worst_schedule_owner + '’s schedule',
+    ],
+  }));
+
+  wrap.appendChild(
+    card('What every schedule in the league would have produced',
+      'Each team’s weekly scores replayed against all twelve schedules. The bar is the full range of records those schedules produce; the dot is what actually happened.',
+      legend([['Range across all schedules', 'var(--seq-100)'], ['Actual record', 'var(--accent)']]),
+      rangeBars(rows),
+      caption('A dot at the left end of a long bar is a team that got the worst schedule available to it.'))
+  );
+
+  const tbl = sw.summary.slice().sort((a, b) => b.actual_wins - a.actual_wins).map((r) => ({
+    selected: isSel(r.team_id),
+    cells: [
+      teamName(r.team_id),
+      rec(r.actual_wins, r.actual_losses),
+      rec(r.best_wins, r.best_losses),
+      r.best_schedule_owner,
+      rec(r.worst_wins, r.worst_losses),
+      r.worst_schedule_owner,
+      fmt(r.mean_wins_all_schedules, 2),
+    ],
+  }));
+  wrap.appendChild(
+    card('Schedule analysis',
+      'The team in each schedule column is whose schedule would have produced that record.',
+      tableEl(['Team', 'Actual', 'Best', 'with schedule of', 'Worst', 'with schedule of', 'Avg'], tbl))
+  );
+  return wrap;
+};
+
+views.power = () => {
+  const pr = state.data.power_rankings;
+  const byTeam = new Map();
+  for (const r of pr) {
+    if (!byTeam.has(r.team_id)) byTeam.set(r.team_id, []);
+    byTeam.get(r.team_id).push(r);
+  }
+  const series = [...byTeam.entries()].map(([team_id, rows]) => ({
+    team_id,
+    points: rows.sort((a, b) => a.week - b.week).map((r) => ({ x: r.week, y: r.power_rank })),
+  }));
+
+  const last = pr.filter((r) => r.week === Math.max(...pr.map((x) => x.week))).sort((a, b) => a.power_rank - b.power_rank);
+  const wrap = document.createDocumentFragment();
+  wrap.appendChild(
+    card('Power ranking by week',
+      'Rank 1 is at the top. Pick a team above to follow it through the season.',
+      emphasisLines(series, { invertY: true, height: 400, format: (v) => '#' + fmt(v, 0) }))
+  );
+  wrap.appendChild(
+    card('Final power ranking',
+      'Score = ((average score × 6) + ((high + low) × 2) + (win % × 400)) ÷ 10',
+      tableEl(['Team', 'Rank', 'Score', 'Avg', 'High', 'Low', 'Win %'],
+        last.map((r) => ({
+          selected: isSel(r.team_id),
+          cells: [teamName(r.team_id), '#' + r.power_rank, fmt(r.power_score, 1), fmt(r.avg_score, 1), fmt(r.high, 1), fmt(r.low, 1), pct(r.win_pct)],
+        }))))
+  );
+  return wrap;
+};
+
+views.quadrants = () => {
+  const weeks = state.data.league.weeks_played;
+  if (state.quadWeek === null) state.quadWeek = weeks[weeks.length - 1];
+  const week = state.quadWeek;
+  const pts = state.data.quad.filter((r) => r.week === week);
+  const wrap = document.createDocumentFragment();
+
+  const slider = h('div', { class: 'toolbar', style: 'padding-left:0;padding-top:0' },
+    h('label', { for: 'quad-week', text: 'Week' }),
+    h('select', {
+      id: 'quad-week',
+      onchange: (ev) => { state.quadWeek = Number(ev.target.value); render(); },
+    }, weeks.map((w) => h('option', { value: w, selected: w === week ? 'selected' : null, text: 'Week ' + w })))
+  );
+
+  const f = frame(720, 460, { left: 56, right: 24, bottom: 44, top: 16 });
+  const pf = pts.map((p) => p.cum_pf), pa = pts.map((p) => p.cum_pa);
+  const padX = (Math.max(...pf) - Math.min(...pf)) * 0.12 || 10;
+  const padY = (Math.max(...pa) - Math.min(...pa)) * 0.12 || 10;
+  const x = linear([Math.min(...pf) - padX, Math.max(...pf) + padX], [0, f.plotW]);
+  /* PA increases downward: lower on the chart is a worse defence. */
+  const y = linear([Math.min(...pa) - padY, Math.max(...pa) + padY], [0, f.plotH]);
+  const avgPf = pts[0].league_avg_pf, avgPa = pts[0].league_avg_pa;
+
+  gridX(f.g, x, niceTicks(Math.min(...pf) - padX, Math.max(...pf) + padX, 5), f.plotH, (t) => fmt(t, 0));
+  gridY(f.g, y, niceTicks(Math.min(...pa) - padY, Math.max(...pa) + padY, 5), f.plotW, (t) => fmt(t, 0));
+
+  f.g.appendChild(el('line', { class: 'baseline', x1: x(avgPf), x2: x(avgPf), y1: 0, y2: f.plotH }));
+  f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: y(avgPa), y2: y(avgPa) }));
+
+  const corner = (tx, ty, anchor, label) =>
+    f.g.appendChild(el('text', { class: 'axis-label', x: tx, y: ty, 'text-anchor': anchor, opacity: 0.75 }, label));
+  corner(f.plotW - 4, 16, 'end', 'scores a lot, gives up little');
+  corner(4, 16, 'start', 'gives up little, scores little');
+  corner(f.plotW - 4, f.plotH - 8, 'end', 'shootouts');
+  corner(4, f.plotH - 8, 'start', 'ass');
+
+  const quadLabels = [];
+  for (const p of pts) {
+    const sel = isSel(p.team_id);
+    const cx = x(p.cum_pf), cy = y(p.cum_pa);
+    f.g.appendChild(el('circle', {
+      cx, cy, r: sel ? 7 : 5,
+      fill: markColor(p.team_id),
+      stroke: 'var(--surface-1)', 'stroke-width': 2,
+      opacity: state.teamId && !sel ? 0.55 : 1,
+    }));
+    quadLabels.push(f.g.appendChild(el('text', {
+      class: 'mark-label' + (sel ? ' strong' : ''),
+      x: cx, y: cy - 11, 'text-anchor': 'middle',
+    }, shortName(p.team_id, 14))));
+    const hit = el('circle', { class: 'hit', cx, cy, r: 14 });
+    hoverable(hit, teamName(p.team_id), [
+      'Through week ' + week + ': <b>' + rec(p.cum_wins, p.cum_losses) + '</b>',
+      'Points for <b>' + fmt(p.cum_pf, 1) + '</b>',
+      'Points against <b>' + fmt(p.cum_pa, 1) + '</b>',
+    ]);
+    f.g.appendChild(hit);
+  }
+  f.g.appendChild(el('text', { class: 'axis-label', x: f.plotW / 2, y: f.plotH + 34, 'text-anchor': 'middle' }, 'Points for →'));
+  f.g.appendChild(el('text', { class: 'axis-label', x: -f.plotH / 2, y: -38, transform: 'rotate(-90)', 'text-anchor': 'middle' }, '← Points against'));
+  onMount(f.svg, () => decollide(quadLabels, { height: f.plotH }));
+
+  wrap.appendChild(
+    card('Quadrants',
+      'Cumulative points for and against through the selected week, against the league average in each. All dots share one color — the quadrant is already carried by position.',
+      slider, f.svg,
+      detailsTable('Table view', ['Team', 'PF', 'PA', 'Record', 'Quadrant'],
+        pts.slice().sort((a, b) => b.cum_pf - a.cum_pf).map((p) => ({
+          selected: isSel(p.team_id),
+          cells: [teamName(p.team_id), fmt(p.cum_pf, 1), fmt(p.cum_pa, 1), rec(p.cum_wins, p.cum_losses), p.quadrant],
+        }))))
+  );
+  return wrap;
+};
+
+views.forecast = () => {
+  const fc = state.data.forecast;
+  const wrap = document.createDocumentFragment();
+
+  const series = fc.race.length
+    ? state.data.teams.map((t) => ({
+        team_id: t.team_id,
+        points: fc.race.map((r) => ({ x: r.week, y: r.avg_cumulative_wins[String(t.team_id)] ?? 0 })),
+      }))
+    : [];
+
+  wrap.appendChild(
+    card('Projected season race',
+      'Average cumulative wins across ' + fc.n_sims.toLocaleString() + ' simulated seasons, run from the state after week ' + fc.through_week + '. Scores are drawn from each team’s own scoring distribution — no player projections.',
+      series.length ? emphasisLines(series, { height: 380, format: (v) => fmt(v, 1) }) : h('p', { class: 'note', text: 'No simulated weeks.' }))
+  );
+
+  const rows = fc.teams.slice().sort((a, b) => b.avg_wins - a.avg_wins).map((r) => ({
+    selected: isSel(r.team_id),
+    cells: [
+      teamName(r.team_id),
+      fmt(r.actual_wins, 0) + ' / #' + r.actual_seed,
+      fmt(r.avg_wins, 2),
+      fmt(r.win_p10, 0) + '–' + fmt(r.win_p90, 0),
+      pct(r.playoff_pct, 1),
+      '#' + fmt(r.avg_seed, 1),
+      pct(r.same_finish_pct, 1),
+    ],
+  }));
+  wrap.appendChild(
+    card('Projected standings',
+      'What the season looked like it would do from week ' + fc.through_week + ', against what it actually did. A low "same finish" means the second half went off script.',
+      tableEl(['Team', 'Actual', 'Avg wins', 'Range (10–90%)', 'Playoffs', 'Avg seed', 'Same finish'], rows))
+  );
+  return wrap;
+};
+
+/* ---------------------------------------------------------------- shell */
+
+function render() {
+  const main = $('#view');
+  main.innerHTML = '';
+  main.appendChild(views[state.view]());
+  for (const svg of main.querySelectorAll('svg.chart')) {
+    if (svg.__fixup) svg.__fixup();
+  }
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.setAttribute('aria-selected', tab.dataset.view === state.view ? 'true' : 'false');
+  }
+  const url = new URL(location.href);
+  url.searchParams.set('view', state.view);
+  if (state.teamId) url.searchParams.set('team', state.teamId);
+  else url.searchParams.delete('team');
+  history.replaceState(null, '', url);
+}
+
+function applyTheme(mode) {
+  if (mode) document.documentElement.setAttribute('data-theme', mode);
+  const dark =
+    document.documentElement.getAttribute('data-theme') === 'dark' ||
+    (!document.documentElement.getAttribute('data-theme') &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches);
+  $('#theme-toggle').textContent = dark ? 'Light' : 'Dark';
+}
+
+async function boot() {
+  const params = new URLSearchParams(location.search);
+  const season = params.get('season') || '2025';
+  let data;
+  try {
+    const res = await fetch('data/' + season + '.json');
+    if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+    data = await res.json();
+  } catch (err) {
+    $('#view').appendChild(
+      card('Could not load league data', 'data/' + season + '.json failed: ' + err.message +
+        '. This page reads a JSON file, so it needs to be served over http rather than opened from disk.')
+    );
+    return;
+  }
+  state.data = data;
+
+  $('#season-line').textContent = data.season + ' season · ' + data.league.team_count + ' teams · ' + data.league.weeks_played.length + ' weeks played';
+  $('#updated-line').textContent = 'updated ' + new Date(data.generated_at).toLocaleDateString();
+
+  const sel = $('#team-select');
+  sel.appendChild(h('option', { value: '', text: 'None (all teams equal)' }));
+  for (const t of data.teams) sel.appendChild(h('option', { value: t.team_id, text: t.name }));
+  const fromUrl = params.get('team');
+  if (fromUrl && data.teams.some((t) => t.team_id === Number(fromUrl))) {
+    state.teamId = Number(fromUrl);
+    sel.value = fromUrl;
+  }
+  sel.addEventListener('change', (ev) => {
+    state.teamId = ev.target.value ? Number(ev.target.value) : null;
+    render();
+  });
+
+  for (const tab of document.querySelectorAll('.tab')) {
+    tab.addEventListener('click', () => { state.view = tab.dataset.view; render(); });
+  }
+  const view = params.get('view');
+  if (view && views[view]) state.view = view;
+
+  $('#theme-toggle').addEventListener('click', () => {
+    const dark = document.documentElement.getAttribute('data-theme') === 'dark' ||
+      (!document.documentElement.getAttribute('data-theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    applyTheme(dark ? 'light' : 'dark');
+    render();
+  });
+  applyTheme(null);
+  render();
+}
+
+boot();
