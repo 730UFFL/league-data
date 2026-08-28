@@ -1,0 +1,14 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Raw API pulls are reproducible from ESPN; the site reads site/data/*.json.
+data/raw/
+
+# Quarto build output from the old dashboard
+archive/dashboard_files/
+.quarto/
+
+# Per-machine Claude Code permissions, not shared project config
+.claude/settings.local.json

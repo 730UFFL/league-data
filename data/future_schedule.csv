@@ -1,0 +1,13 @@
+week,team_id,team_name,opponent_id,opponent_name,is_home
+14,9,Team ornitz,18,LEAGUE NOT BREAK STAY ALIVE,True
+14,18,LEAGUE NOT BREAK STAY ALIVE,9,Team ornitz,False
+14,14,Cliff cliff cliff ,8,Puka Doncic,True
+14,8,Puka Doncic,14,Cliff cliff cliff ,False
+14,16,Lions by 90,19,The Untouchaballs,True
+14,19,The Untouchaballs,16,Lions by 90,False
+14,2,FRATtia,6,The Fudge Packers,True
+14,6,The Fudge Packers,2,FRATtia,False
+14,13,Chase-ing Paper,11,Butker's Prayers,True
+14,11,Butker's Prayers,13,Chase-ing Paper,False
+14,1,JF Wait Advisors,17,LEEEROYYYYY JUDKINS,True
+14,17,LEEEROYYYYY JUDKINS,1,JF Wait Advisors,False

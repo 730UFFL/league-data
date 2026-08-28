@@ -1,0 +1,7 @@
+# Authored on Windows, built on ubuntu-latest in CI. Without this, blobs get
+# CRLF from the Windows side and the runner rewrites them, so the weekly
+# refresh job would commit line-ending churn on top of the real data changes.
+* text=auto eol=lf
+
+*.png  binary
+*.woff binary

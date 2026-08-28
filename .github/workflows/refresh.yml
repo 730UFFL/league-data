@@ -1,0 +1,44 @@
+name: Refresh league data
+
+on:
+  schedule:
+    # Tuesdays 12:00 UTC (07:00 ET) - after Monday Night Football has settled.
+    - cron: "0 12 * * 2"
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Pull from ESPN
+        env:
+          LEAGUE_ID: ${{ secrets.LEAGUE_ID }}
+          SEASON: ${{ vars.SEASON }}
+          ESPN_S2: ${{ secrets.ESPN_S2 }}
+          ESPN_SWID: ${{ secrets.ESPN_SWID }}
+        run: python -m pipeline.fetch --season "$SEASON" --box-scores
+
+      - name: Compute metrics
+        env:
+          SEASON: ${{ vars.SEASON }}
+        run: |
+          python -m pipeline.compute --season "$SEASON"
+          python -m pipeline.validate --season "$SEASON"
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add site/data
+          git diff --staged --quiet || git commit -m "Refresh league data ($(date -u +%Y-%m-%d))"
+          git push

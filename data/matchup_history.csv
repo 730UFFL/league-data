@@ -1,0 +1,157 @@
+week,team_id,team_name,score,opponent_id,opponent_name,opponent_score,won,is_home
+1,19,The Untouchaballs,53.52,9,Team ornitz,109.32,False,True
+1,9,Team ornitz,109.32,19,The Untouchaballs,53.52,True,False
+1,6,The Fudge Packers,120.56,8,Puka Doncic,111.88,True,True
+1,8,Puka Doncic,111.88,6,The Fudge Packers,120.56,False,False
+1,11,Butker's Prayers,115.36,18,LEAGUE NOT BREAK STAY ALIVE,62.78,True,True
+1,18,LEAGUE NOT BREAK STAY ALIVE,62.78,11,Butker's Prayers,115.36,False,False
+1,17,LEEEROYYYYY JUDKINS,116.64,14,Cliff cliff cliff ,68.28,True,True
+1,14,Cliff cliff cliff ,68.28,17,LEEEROYYYYY JUDKINS,116.64,False,False
+1,1,JF Wait Advisors,108.32,16,Lions by 90,98.42,True,True
+1,16,Lions by 90,98.42,1,JF Wait Advisors,108.32,False,False
+1,13,Chase-ing Paper,82.78,2,FRATtia,80.12,True,True
+1,2,FRATtia,80.12,13,Chase-ing Paper,82.78,False,False
+2,9,Team ornitz,87.38,8,Puka Doncic,106.28,False,True
+2,8,Puka Doncic,106.28,9,Team ornitz,87.38,True,False
+2,18,LEAGUE NOT BREAK STAY ALIVE,105.34,19,The Untouchaballs,131.24,False,True
+2,19,The Untouchaballs,131.24,18,LEAGUE NOT BREAK STAY ALIVE,105.34,True,False
+2,14,Cliff cliff cliff ,51.14,6,The Fudge Packers,103.5,False,True
+2,6,The Fudge Packers,103.5,14,Cliff cliff cliff ,51.14,True,False
+2,16,Lions by 90,105.1,11,Butker's Prayers,90.32,True,True
+2,11,Butker's Prayers,90.32,16,Lions by 90,105.1,False,False
+2,2,FRATtia,102.22,17,LEEEROYYYYY JUDKINS,131.54,False,True
+2,17,LEEEROYYYYY JUDKINS,131.54,2,FRATtia,102.22,True,False
+2,13,Chase-ing Paper,120.6,1,JF Wait Advisors,87.1,True,True
+2,1,JF Wait Advisors,87.1,13,Chase-ing Paper,120.6,False,False
+3,18,LEAGUE NOT BREAK STAY ALIVE,81.74,9,Team ornitz,85.86,False,True
+3,9,Team ornitz,85.86,18,LEAGUE NOT BREAK STAY ALIVE,81.74,True,False
+3,8,Puka Doncic,133.02,14,Cliff cliff cliff ,146.34,False,True
+3,14,Cliff cliff cliff ,146.34,8,Puka Doncic,133.02,True,False
+3,19,The Untouchaballs,88.08,16,Lions by 90,59.9,True,True
+3,16,Lions by 90,59.9,19,The Untouchaballs,88.08,False,False
+3,6,The Fudge Packers,145.12,2,FRATtia,133.82,True,True
+3,2,FRATtia,133.82,6,The Fudge Packers,145.12,False,False
+3,11,Butker's Prayers,91.52,13,Chase-ing Paper,81.12,True,True
+3,13,Chase-ing Paper,81.12,11,Butker's Prayers,91.52,False,False
+3,17,LEEEROYYYYY JUDKINS,113.42,1,JF Wait Advisors,79.36,True,True
+3,1,JF Wait Advisors,79.36,17,LEEEROYYYYY JUDKINS,113.42,False,False
+4,9,Team ornitz,94.4,14,Cliff cliff cliff ,76.0,True,True
+4,14,Cliff cliff cliff ,76.0,9,Team ornitz,94.4,False,False
+4,16,Lions by 90,119.78,18,LEAGUE NOT BREAK STAY ALIVE,109.66,True,True
+4,18,LEAGUE NOT BREAK STAY ALIVE,109.66,16,Lions by 90,119.78,False,False
+4,2,FRATtia,91.78,8,Puka Doncic,158.32,False,True
+4,8,Puka Doncic,158.32,2,FRATtia,91.78,True,False
+4,13,Chase-ing Paper,103.06,19,The Untouchaballs,72.02,True,True
+4,19,The Untouchaballs,72.02,13,Chase-ing Paper,103.06,False,False
+4,1,JF Wait Advisors,131.2,6,The Fudge Packers,117.18,True,True
+4,6,The Fudge Packers,117.18,1,JF Wait Advisors,131.2,False,False
+4,17,LEEEROYYYYY JUDKINS,132.84,11,Butker's Prayers,111.26,True,True
+4,11,Butker's Prayers,111.26,17,LEEEROYYYYY JUDKINS,132.84,False,False
+5,16,Lions by 90,128.98,9,Team ornitz,123.14,True,True
+5,9,Team ornitz,123.14,16,Lions by 90,128.98,False,False
+5,14,Cliff cliff cliff ,90.6,2,FRATtia,111.16,False,True
+5,2,FRATtia,111.16,14,Cliff cliff cliff ,90.6,True,False
+5,18,LEAGUE NOT BREAK STAY ALIVE,135.08,13,Chase-ing Paper,113.26,True,True
+5,13,Chase-ing Paper,113.26,18,LEAGUE NOT BREAK STAY ALIVE,135.08,False,False
+5,8,Puka Doncic,109.52,1,JF Wait Advisors,89.5,True,True
+5,1,JF Wait Advisors,89.5,8,Puka Doncic,109.52,False,False
+5,19,The Untouchaballs,117.52,17,LEEEROYYYYY JUDKINS,92.54,True,True
+5,17,LEEEROYYYYY JUDKINS,92.54,19,The Untouchaballs,117.52,False,False
+5,6,The Fudge Packers,124.88,11,Butker's Prayers,77.02,True,True
+5,11,Butker's Prayers,77.02,6,The Fudge Packers,124.88,False,False
+6,9,Team ornitz,117.38,2,FRATtia,79.18,True,True
+6,2,FRATtia,79.18,9,Team ornitz,117.38,False,False
+6,13,Chase-ing Paper,86.34,16,Lions by 90,97.98,False,True
+6,16,Lions by 90,97.98,13,Chase-ing Paper,86.34,True,False
+6,1,JF Wait Advisors,118.4,14,Cliff cliff cliff ,80.52,True,True
+6,14,Cliff cliff cliff ,80.52,1,JF Wait Advisors,118.4,False,False
+6,17,LEEEROYYYYY JUDKINS,86.34,18,LEAGUE NOT BREAK STAY ALIVE,128.0,False,True
+6,18,LEAGUE NOT BREAK STAY ALIVE,128.0,17,LEEEROYYYYY JUDKINS,86.34,True,False
+6,11,Butker's Prayers,129.7,8,Puka Doncic,156.56,False,True
+6,8,Puka Doncic,156.56,11,Butker's Prayers,129.7,True,False
+6,6,The Fudge Packers,91.04,19,The Untouchaballs,53.82,True,True
+6,19,The Untouchaballs,53.82,6,The Fudge Packers,91.04,False,False
+7,13,Chase-ing Paper,105.22,9,Team ornitz,73.84,True,True
+7,9,Team ornitz,73.84,13,Chase-ing Paper,105.22,False,False
+7,2,FRATtia,101.98,1,JF Wait Advisors,91.38,True,True
+7,1,JF Wait Advisors,91.38,2,FRATtia,101.98,False,False
+7,16,Lions by 90,120.62,17,LEEEROYYYYY JUDKINS,137.44,False,True
+7,17,LEEEROYYYYY JUDKINS,137.44,16,Lions by 90,120.62,True,False
+7,14,Cliff cliff cliff ,119.44,11,Butker's Prayers,93.66,True,True
+7,11,Butker's Prayers,93.66,14,Cliff cliff cliff ,119.44,False,False
+7,18,LEAGUE NOT BREAK STAY ALIVE,131.72,6,The Fudge Packers,134.76,False,True
+7,6,The Fudge Packers,134.76,18,LEAGUE NOT BREAK STAY ALIVE,131.72,True,False
+7,8,Puka Doncic,108.28,19,The Untouchaballs,78.44,True,True
+7,19,The Untouchaballs,78.44,8,Puka Doncic,108.28,False,False
+8,9,Team ornitz,100.06,1,JF Wait Advisors,104.56,False,True
+8,1,JF Wait Advisors,104.56,9,Team ornitz,100.06,True,False
+8,17,LEEEROYYYYY JUDKINS,113.78,13,Chase-ing Paper,78.58,True,True
+8,13,Chase-ing Paper,78.58,17,LEEEROYYYYY JUDKINS,113.78,False,False
+8,11,Butker's Prayers,81.22,2,FRATtia,122.0,False,True
+8,2,FRATtia,122.0,11,Butker's Prayers,81.22,True,False
+8,6,The Fudge Packers,83.82,16,Lions by 90,115.88,False,True
+8,16,Lions by 90,115.88,6,The Fudge Packers,83.82,True,False
+8,19,The Untouchaballs,84.42,14,Cliff cliff cliff ,110.02,False,True
+8,14,Cliff cliff cliff ,110.02,19,The Untouchaballs,84.42,True,False
+8,8,Puka Doncic,138.58,18,LEAGUE NOT BREAK STAY ALIVE,113.62,True,True
+8,18,LEAGUE NOT BREAK STAY ALIVE,113.62,8,Puka Doncic,138.58,False,False
+9,17,LEEEROYYYYY JUDKINS,107.32,9,Team ornitz,101.6,True,True
+9,9,Team ornitz,101.6,17,LEEEROYYYYY JUDKINS,107.32,False,False
+9,1,JF Wait Advisors,104.04,11,Butker's Prayers,118.32,False,True
+9,11,Butker's Prayers,118.32,1,JF Wait Advisors,104.04,True,False
+9,13,Chase-ing Paper,157.8,6,The Fudge Packers,112.74,True,True
+9,6,The Fudge Packers,112.74,13,Chase-ing Paper,157.8,False,False
+9,2,FRATtia,113.9,19,The Untouchaballs,114.4,False,True
+9,19,The Untouchaballs,114.4,2,FRATtia,113.9,True,False
+9,16,Lions by 90,93.98,8,Puka Doncic,103.36,False,True
+9,8,Puka Doncic,103.36,16,Lions by 90,93.98,True,False
+9,14,Cliff cliff cliff ,88.2,18,LEAGUE NOT BREAK STAY ALIVE,123.54,False,True
+9,18,LEAGUE NOT BREAK STAY ALIVE,123.54,14,Cliff cliff cliff ,88.2,True,False
+10,9,Team ornitz,72.68,11,Butker's Prayers,115.14,False,True
+10,11,Butker's Prayers,115.14,9,Team ornitz,72.68,True,False
+10,6,The Fudge Packers,82.04,17,LEEEROYYYYY JUDKINS,79.3,True,True
+10,17,LEEEROYYYYY JUDKINS,79.3,6,The Fudge Packers,82.04,False,False
+10,19,The Untouchaballs,83.6,1,JF Wait Advisors,135.0,False,True
+10,1,JF Wait Advisors,135.0,19,The Untouchaballs,83.6,True,False
+10,8,Puka Doncic,105.4,13,Chase-ing Paper,75.22,True,True
+10,13,Chase-ing Paper,75.22,8,Puka Doncic,105.4,False,False
+10,18,LEAGUE NOT BREAK STAY ALIVE,177.88,2,FRATtia,146.0,True,True
+10,2,FRATtia,146.0,18,LEAGUE NOT BREAK STAY ALIVE,177.88,False,False
+10,14,Cliff cliff cliff ,102.12,16,Lions by 90,104.0,False,True
+10,16,Lions by 90,104.0,14,Cliff cliff cliff ,102.12,True,False
+11,6,The Fudge Packers,64.82,9,Team ornitz,51.14,True,True
+11,9,Team ornitz,51.14,6,The Fudge Packers,64.82,False,False
+11,11,Butker's Prayers,132.68,19,The Untouchaballs,81.2,True,True
+11,19,The Untouchaballs,81.2,11,Butker's Prayers,132.68,False,False
+11,17,LEEEROYYYYY JUDKINS,106.2,8,Puka Doncic,119.34,False,True
+11,8,Puka Doncic,119.34,17,LEEEROYYYYY JUDKINS,106.2,True,False
+11,1,JF Wait Advisors,96.2,18,LEAGUE NOT BREAK STAY ALIVE,91.1,True,True
+11,18,LEAGUE NOT BREAK STAY ALIVE,91.1,1,JF Wait Advisors,96.2,False,False
+11,13,Chase-ing Paper,92.32,14,Cliff cliff cliff ,91.3,True,True
+11,14,Cliff cliff cliff ,91.3,13,Chase-ing Paper,92.32,False,False
+11,2,FRATtia,96.32,16,Lions by 90,168.78,False,True
+11,16,Lions by 90,168.78,2,FRATtia,96.32,True,False
+12,9,Team ornitz,77.48,19,The Untouchaballs,106.56,False,True
+12,19,The Untouchaballs,106.56,9,Team ornitz,77.48,True,False
+12,8,Puka Doncic,119.16,6,The Fudge Packers,74.52,True,True
+12,6,The Fudge Packers,74.52,8,Puka Doncic,119.16,False,False
+12,18,LEAGUE NOT BREAK STAY ALIVE,51.22,11,Butker's Prayers,95.92,False,True
+12,11,Butker's Prayers,95.92,18,LEAGUE NOT BREAK STAY ALIVE,51.22,True,False
+12,14,Cliff cliff cliff ,124.86,17,LEEEROYYYYY JUDKINS,159.94,False,True
+12,17,LEEEROYYYYY JUDKINS,159.94,14,Cliff cliff cliff ,124.86,True,False
+12,16,Lions by 90,108.34,1,JF Wait Advisors,126.12,False,True
+12,1,JF Wait Advisors,126.12,16,Lions by 90,108.34,True,False
+12,2,FRATtia,119.06,13,Chase-ing Paper,119.76,False,True
+12,13,Chase-ing Paper,119.76,2,FRATtia,119.06,True,False
+13,8,Puka Doncic,119.48,9,Team ornitz,67.94,True,True
+13,9,Team ornitz,67.94,8,Puka Doncic,119.48,False,False
+13,19,The Untouchaballs,87.94,18,LEAGUE NOT BREAK STAY ALIVE,120.16,False,True
+13,18,LEAGUE NOT BREAK STAY ALIVE,120.16,19,The Untouchaballs,87.94,True,False
+13,6,The Fudge Packers,100.94,14,Cliff cliff cliff ,120.5,False,True
+13,14,Cliff cliff cliff ,120.5,6,The Fudge Packers,100.94,True,False
+13,11,Butker's Prayers,99.42,16,Lions by 90,115.24,False,True
+13,16,Lions by 90,115.24,11,Butker's Prayers,99.42,True,False
+13,17,LEEEROYYYYY JUDKINS,98.74,2,FRATtia,88.06,True,True
+13,2,FRATtia,88.06,17,LEEEROYYYYY JUDKINS,98.74,False,False
+13,1,JF Wait Advisors,48.62,13,Chase-ing Paper,82.52,False,True
+13,13,Chase-ing Paper,82.52,1,JF Wait Advisors,48.62,True,False
