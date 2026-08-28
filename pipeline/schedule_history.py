@@ -186,13 +186,21 @@ def main() -> None:
         print(f"  {year}: {describe(s)}")
 
     print("\nSeason vs season (over shared owners)")
-    print(f"  {'pair':<12}{'teams':>6}{'same wk slot':>14}{'identical wks':>15}{'same opp set':>14}")
+    print(f"  {'pair':<12}{'teams':>6}{'same wk slot':>14}{'identical wks':>14}{'same opp set':>14}  verdict")
     for y1, y2 in combinations(sorted(seasons), 2):
         r = compare(seasons[y1], seasons[y2])
         slot = "n/a" if r["week_slot_match"] is None else f"{r['week_slot_match']*100:.1f}%"
+        same_set = f"{r['same_opponent_multiset']}/{r['of_teams']}"
+        pct = r["week_slot_match"] or 0.0
+        set_all = r["same_opponent_multiset"] == r["of_teams"]
+        verdict = (
+            "IDENTICAL" if pct > 0.999
+            else "rotated" if set_all
+            else "regenerated"
+        )
         print(
             f"  {y1}-{y2:<7}{r['shared_teams']:>6}{slot:>14}"
-            f"{len(r['identical_weeks']):>15}{r['same_opponent_multiset']}/{r['of_teams']:>10}"
+            f"{len(r['identical_weeks']):>14}{same_set:>14}  {verdict}"
         )
 
     print(
