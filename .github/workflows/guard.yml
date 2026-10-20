@@ -1,0 +1,32 @@
+name: Guard
+
+# .env.example was once committed with a live ESPN_S2 cookie in it. This fails
+# the build rather than letting that reach a public repo again.
+on:
+  push:
+  pull_request:
+
+jobs:
+  no-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: .env.example must hold placeholders only
+        run: |
+          fail=0
+          if [ -f .env ]; then
+            echo "::error file=.env::.env is tracked; it must stay gitignored"
+            fail=1
+          fi
+          s2=$(grep -E '^ESPN_S2=' .env.example | cut -d= -f2-)
+          if [ -n "$s2" ]; then
+            echo "::error file=.env.example::ESPN_S2 is populated (${#s2} chars). Blank it; real values belong in .env or repo secrets."
+            fail=1
+          fi
+          swid=$(grep -E '^ESPN_SWID=' .env.example | cut -d= -f2-)
+          if [ -n "$swid" ] && [ "$swid" != "{00000000-0000-0000-0000-000000000000}" ]; then
+            echo "::error file=.env.example::ESPN_SWID is not the placeholder."
+            fail=1
+          fi
+          [ "$fail" = 0 ] && echo "ok: no live credentials in .env.example"
+          exit $fail
