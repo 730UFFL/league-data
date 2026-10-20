@@ -6,11 +6,24 @@ on:
     - cron: "0 12 * * 2"
   workflow_dispatch:
 
+# A push made with GITHUB_TOKEN does not trigger other workflows, so this job
+# cannot hand off to deploy.yml - it would commit new data and leave the site
+# serving the old. It deploys the tree it just built instead.
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,3 +55,10 @@ jobs:
           git add site/data
           git diff --staged --quiet || git commit -m "Refresh league data ($(date -u +%Y-%m-%d))"
           git push
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
