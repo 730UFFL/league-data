@@ -163,6 +163,46 @@ function niceTicks(min, max, count) {
   return out;
 }
 
+/* ------------------------------------------------------- responsive layout */
+
+/* Charts used to carry a fixed 720-unit viewBox, so on a phone the whole
+   drawing scaled to 38% and 11px labels rendered at 4px. They are now built at
+   the width they will actually occupy, which keeps text at its real size.
+   Measured once per render and passed down. */
+function layout() {
+  const view = $('#view');
+  const padX = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--card-pad-x')
+  ) || 20;
+  /* clientWidth includes the element's own padding, so take it off before
+     subtracting the card's - otherwise the chart is built wider than the box
+     it lands in and the browser scales it back down, which is the bug this
+     whole change exists to remove. */
+  let avail = 720;
+  if (view) {
+    const cs = getComputedStyle(view);
+    avail = view.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  }
+  const width = Math.max(260, Math.min(760, avail - padX * 2 - 2));
+  const narrow = width < 460;
+  return {
+    width,
+    narrow,
+    /* Taller rows on a phone so a tap target clears ~24px. */
+    rowH: narrow ? 34 : 26,
+    /* The name gutter is 21% of a desktop chart but would be 45% of a phone
+       one, so it shrinks and the names truncate harder. It cannot go away
+       entirely on bar charts - it is the y axis. */
+    labelW: narrow ? 94 : 150,
+    nameChars: narrow ? 11 : 20,
+    /* Per-mark labels on scatter and line ends do collide on a phone, and
+       tap-to-select covers identifying a team there. */
+    markLabels: !narrow,
+    weekTickEvery: narrow ? 2 : 1,
+    valueLabels: !narrow,
+  };
+}
+
 /* ---------------------------------------------------------------- frame */
 
 function frame(width, height, m) {
@@ -312,10 +352,10 @@ function tile(label, value, detail) {
 
 /* Horizontal diverging bars around a zero baseline. */
 function divergingBars(rows, opts) {
-  const o = Object.assign({ dp: 2, unit: '', rowH: 26, labelW: 150 }, opts || {});
+  const L = layout();
+  const o = Object.assign({ dp: 2, unit: '', rowH: L.rowH, labelW: L.labelW }, opts || {});
   const height = rows.length * o.rowH + 46;
-  const width = 720;
-  const f = frame(width, height, { left: o.labelW, right: 56, bottom: 26, top: 8 });
+  const f = frame(L.width, height, { left: o.labelW, right: L.narrow ? 42 : 56, bottom: 26, top: 8 });
   const max = Math.max(...rows.map((r) => Math.abs(r.value)), 0.001) * 1.15;
   const x = linear([-max, max], [0, f.plotW]);
   const valueLabels = [];
@@ -336,7 +376,7 @@ function divergingBars(rows, opts) {
         x: -10,
         y: y + bh / 2 + 4,
         'text-anchor': 'end',
-      }, shortName(r.team_id, 20))
+      }, shortName(r.team_id, o.nameChars || L.nameChars))
     );
 
     const bar = el('rect', {
@@ -380,9 +420,10 @@ function divergingBars(rows, opts) {
 
 /* Two values per row joined by a rule - one hue, two shades. */
 function dumbbell(rows, opts) {
-  const o = Object.assign({ rowH: 26, labelW: 150, format: (v) => fmt(v, 0) }, opts || {});
+  const L = layout();
+  const o = Object.assign({ rowH: L.rowH, labelW: L.labelW, format: (v) => fmt(v, 0) }, opts || {});
   const height = rows.length * o.rowH + 46;
-  const f = frame(720, height, { left: o.labelW, right: 60, bottom: 26, top: 8 });
+  const f = frame(L.width, height, { left: o.labelW, right: L.narrow ? 24 : 60, bottom: 26, top: 8 });
   const all = rows.flatMap((r) => [r.a, r.b]);
   const lo = Math.min(...all), hi = Math.max(...all);
   const pad = (hi - lo) * 0.12 || 1;
@@ -396,7 +437,7 @@ function dumbbell(rows, opts) {
       el('text', {
         class: 'mark-label' + (isSel(r.team_id) ? ' strong' : ''),
         x: -10, y: y + 4, 'text-anchor': 'end',
-      }, shortName(r.team_id, 20))
+      }, shortName(r.team_id, L.nameChars))
     );
     f.g.appendChild(
       el('line', { x1: x(r.a), x2: x(r.b), y1: y, y2: y, stroke: 'var(--axis)', 'stroke-width': 2, opacity: dim })
@@ -412,8 +453,9 @@ function dumbbell(rows, opts) {
 
 /* worst .. best range with the actual result marked inside it. */
 function rangeBars(rows) {
-  const rowH = 30, labelW = 150;
-  const f = frame(720, rows.length * rowH + 48, { left: labelW, right: 40, bottom: 28, top: 8 });
+  const L = layout();
+  const rowH = L.narrow ? 34 : 30, labelW = L.labelW;
+  const f = frame(L.width, rows.length * rowH + 48, { left: labelW, right: L.narrow ? 22 : 40, bottom: 28, top: 8 });
   const lo = Math.min(...rows.map((r) => r.lo));
   const hi = Math.max(...rows.map((r) => r.hi));
   const x = linear([lo - 0.5, hi + 0.5], [0, f.plotW]);
@@ -424,7 +466,7 @@ function rangeBars(rows) {
     const dim = state.teamId && !isSel(r.team_id) ? 0.45 : 1;
     f.g.appendChild(
       el('text', { class: 'mark-label' + (isSel(r.team_id) ? ' strong' : ''), x: -10, y: y + 4, 'text-anchor': 'end' },
-        shortName(r.team_id, 20))
+        shortName(r.team_id, L.nameChars))
     );
     f.g.appendChild(
       el('rect', {
@@ -444,8 +486,10 @@ function rangeBars(rows) {
 
 /* Multi-line over weeks - one team emphasised, the rest context gray. */
 function emphasisLines(series, opts) {
+  const L = layout();
   const o = Object.assign({ invertY: false, height: 380, yLabel: '', format: (v) => fmt(v, 0) }, opts || {});
-  const f = frame(720, o.height, { left: 44, right: 108, bottom: 34, top: 10 });
+  const f = frame(L.width, L.narrow ? Math.min(o.height, 300) : o.height,
+                  { left: 40, right: L.markLabels ? 108 : 14, bottom: 34, top: 10 });
   const weeks = series[0].points.map((p) => p.x);
   const vals = series.flatMap((s) => s.points.map((p) => p.y));
   let lo = Math.min(...vals), hi = Math.max(...vals);
@@ -456,6 +500,7 @@ function emphasisLines(series, opts) {
 
   gridY(f.g, y, niceTicks(lo, hi, 5), f.plotW, o.format);
   for (const w of weeks) {
+    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0 && w !== weeks[weeks.length - 1]) continue;
     f.g.appendChild(el('text', { class: 'axis-label', x: x(w), y: f.plotH + 18, 'text-anchor': 'middle' }, String(w)));
   }
   f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: f.plotH, y2: f.plotH }));
@@ -478,16 +523,20 @@ function emphasisLines(series, opts) {
   const labelled = new Set();
   const last = (s) => s.points[s.points.length - 1];
   const ranked = series.slice().sort((a, b) => last(a).y - last(b).y);
-  const picks = [focus[0], ranked[0], ranked[ranked.length - 1]].filter(Boolean);
+  const picks = (L.markLabels
+    ? [focus[0], ranked[0], ranked[ranked.length - 1]]
+    : [focus[0]]).filter(Boolean);
   for (const s of picks) {
     if (labelled.has(s.team_id)) continue;
     labelled.add(s.team_id);
     const p = last(s);
     f.g.appendChild(
-      el('text', {
-        class: 'mark-label' + (isSel(s.team_id) ? ' strong' : ''),
-        x: x(p.x) + 8, y: y(p.y) + 4,
-      }, shortName(s.team_id, 14))
+      el('text', Object.assign(
+        { class: 'mark-label' + (isSel(s.team_id) ? ' strong' : '') },
+        L.markLabels
+          ? { x: x(p.x) + 8, y: y(p.y) + 4 }
+          : { x: f.plotW - 2, y: y(p.y) - 9, 'text-anchor': 'end' }
+      ), shortName(s.team_id, L.markLabels ? 14 : 18))
     );
   }
 
@@ -758,7 +807,10 @@ views.quadrants = () => {
     }, weeks.map((w) => h('option', { value: w, selected: w === week ? 'selected' : null, text: 'Week ' + w })))
   );
 
-  const f = frame(720, 460, { left: 56, right: 24, bottom: 44, top: 16 });
+  const L = layout();
+  const quadH = L.narrow ? Math.round(L.width * 1.05) + 60 : 460;
+  const f = frame(L.width, quadH,
+                  { left: L.narrow ? 38 : 56, right: L.narrow ? 14 : 24, bottom: 44, top: 16 });
   const pf = pts.map((p) => p.cum_pf), pa = pts.map((p) => p.cum_pa);
   const padX = (Math.max(...pf) - Math.min(...pf)) * 0.12 || 10;
   const padY = (Math.max(...pa) - Math.min(...pa)) * 0.12 || 10;
@@ -775,8 +827,8 @@ views.quadrants = () => {
 
   const corner = (tx, ty, anchor, label) =>
     f.g.appendChild(el('text', { class: 'axis-label', x: tx, y: ty, 'text-anchor': anchor, opacity: 0.75 }, label));
-  corner(f.plotW - 4, 16, 'end', 'scores a lot, gives up little');
-  corner(4, 16, 'start', 'gives up little, scores little');
+  corner(f.plotW - 4, 16, 'end', L.narrow ? 'good' : 'scores a lot, gives up little');
+  corner(4, 16, 'start', L.narrow ? 'stingy' : 'gives up little, scores little');
   corner(f.plotW - 4, f.plotH - 8, 'end', 'shootouts');
   corner(4, f.plotH - 8, 'start', 'ass');
 
@@ -785,16 +837,18 @@ views.quadrants = () => {
     const sel = isSel(p.team_id);
     const cx = x(p.cum_pf), cy = y(p.cum_pa);
     f.g.appendChild(el('circle', {
-      cx, cy, r: sel ? 7 : 5,
+      cx, cy, r: sel ? (L.narrow ? 8 : 7) : (L.narrow ? 6 : 5),
       fill: markColor(p.team_id),
       stroke: 'var(--surface-1)', 'stroke-width': 2,
       opacity: state.teamId && !sel ? 0.55 : 1,
     }));
-    quadLabels.push(f.g.appendChild(el('text', {
-      class: 'mark-label' + (sel ? ' strong' : ''),
-      x: cx, y: cy - 11, 'text-anchor': 'middle',
-    }, shortName(p.team_id, 14))));
-    const hit = el('circle', { class: 'hit', cx, cy, r: 14 });
+    if (L.markLabels || sel) {
+      quadLabels.push(f.g.appendChild(el('text', {
+        class: 'mark-label' + (sel ? ' strong' : ''),
+        x: cx, y: cy - 11, 'text-anchor': 'middle',
+      }, shortName(p.team_id, L.narrow ? 16 : 14))));
+    }
+    const hit = el('circle', { class: 'hit', cx, cy, r: L.narrow ? 18 : 14 });
     hoverable(hit, teamName(p.team_id), [
       'Through week ' + week + ': <b>' + rec(p.cum_wins, p.cum_losses) + '</b>',
       'Points for <b>' + fmt(p.cum_pf, 1) + '</b>',
@@ -803,8 +857,10 @@ views.quadrants = () => {
     selectable(hit, p.team_id);
     f.g.appendChild(hit);
   }
-  f.g.appendChild(el('text', { class: 'axis-label', x: f.plotW / 2, y: f.plotH + 34, 'text-anchor': 'middle' }, 'Points for →'));
-  f.g.appendChild(el('text', { class: 'axis-label', x: -f.plotH / 2, y: -38, transform: 'rotate(-90)', 'text-anchor': 'middle' }, '← Points against'));
+  if (!L.narrow) {
+    f.g.appendChild(el('text', { class: 'axis-label', x: f.plotW / 2, y: f.plotH + 34, 'text-anchor': 'middle' }, 'Points for →'));
+    f.g.appendChild(el('text', { class: 'axis-label', x: -f.plotH / 2, y: -38, transform: 'rotate(-90)', 'text-anchor': 'middle' }, '← Points against'));
+  }
   onMount(f.svg, () => decollide(quadLabels, { height: f.plotH }));
 
   wrap.appendChild(
@@ -977,6 +1033,18 @@ async function boot() {
     applyTheme(dark ? 'light' : 'dark');
     render();
   });
+  /* Charts are built at a measured width, so a resize or rotate needs a
+     rebuild. Debounced, and skipped when the width has not actually moved -
+     mobile browsers fire resize on every address-bar show/hide. */
+  let lastWidth = window.innerWidth;
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (window.innerWidth === lastWidth) return;
+    lastWidth = window.innerWidth;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(render, 150);
+  });
+
   applyTheme(null);
   render();
 }

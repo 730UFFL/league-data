@@ -25,6 +25,9 @@
 
   --radius: 10px;
   --gap: 20px;
+  /* Read by layout() in app.js so the charts and the cards agree on width. */
+  --card-pad-x: 20px;
+  --page-pad: 28px;
   --font: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -70,6 +73,11 @@
 
 * { box-sizing: border-box; }
 
+/* Charts are built at a measured width. Without a reserved gutter the
+   scrollbar appears only after the content renders, shrinking the viewport by
+   ~15px and leaving every chart scaled to 0.975. */
+html { scrollbar-gutter: stable; }
+
 body {
   margin: 0;
   font-family: var(--font);
@@ -86,7 +94,7 @@ body {
   align-items: baseline;
   gap: 16px;
   flex-wrap: wrap;
-  padding: 22px 28px 0;
+  padding: 22px var(--page-pad) 0;
   max-width: 1180px;
   margin: 0 auto;
 }
@@ -99,7 +107,7 @@ body {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 14px 28px;
+  padding: 14px var(--page-pad);
   max-width: 1180px;
   margin: 0 auto;
 }
@@ -127,7 +135,7 @@ nav.tabs {
   display: flex;
   gap: 4px;
   overflow-x: auto;
-  padding: 0 28px;
+  padding: 0 var(--page-pad);
   max-width: 1180px;
   margin: 0 auto;
   border-bottom: 1px solid var(--border);
@@ -147,7 +155,7 @@ nav.tabs {
   font-weight: 600;
 }
 
-main { max-width: 1180px; margin: 0 auto; padding: var(--gap) 28px 64px; }
+main { max-width: 1180px; margin: 0 auto; padding: var(--gap) var(--page-pad) 64px; }
 
 /* ---------- cards ---------- */
 
@@ -155,7 +163,7 @@ main { max-width: 1180px; margin: 0 auto; padding: var(--gap) 28px 64px; }
   background: var(--surface-1);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 18px 20px 20px;
+  padding: 18px var(--card-pad-x) 20px;
   margin-bottom: var(--gap);
 }
 .card > h2 { font-size: 16px; margin: 0 0 2px; letter-spacing: -0.01em; }
@@ -250,3 +258,39 @@ details.table-view summary {
 .tooltip .t-row b { color: var(--text-primary); font-weight: 600; }
 
 .hit { fill: transparent; cursor: pointer; }
+
+
+/* ---------- narrow screens ---------- */
+
+/* A phone loses 26% of its width to gutters at desktop padding, before a chart
+   draws anything. app.js reads --card-pad-x to size charts to match. */
+@media (max-width: 600px) {
+  :root {
+    --card-pad-x: 12px;
+    --page-pad: 14px;
+    --gap: 14px;
+  }
+
+  body { font-size: 14.5px; }
+
+  .masthead h1 { font-size: 19px; }
+  .masthead .sub, .toolbar .hint { font-size: 12px; }
+
+  /* The toolbar stacks rather than squeezing the selects to nothing. */
+  .toolbar { gap: 8px; }
+  .toolbar select { flex: 1 1 auto; min-width: 0; }
+  .toolbar .hint { flex: 1 0 100%; }
+
+  .card { padding: 14px var(--card-pad-x) 16px; }
+  .card > h2 { font-size: 15px; }
+  .card > .note, .card > .caption { font-size: 12.5px; }
+
+  .tile { padding: 12px 14px; }
+  .tile .value { font-size: 24px; }
+
+  table { font-size: 13px; }
+  th, td { padding: 8px 8px; }
+
+  /* Tap targets: table rows carry selection too, so they need the height. */
+  tbody tr.clickable td { padding-top: 10px; padding-bottom: 10px; }
+}
