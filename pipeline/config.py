@@ -1,7 +1,8 @@
 """Configuration, read from the environment.
 
-Nothing secret lives in source. Copy .env.example to .env and fill it in, or
-set these in the shell / CI secret store.
+Nothing secret lives in source. Put LEAGUE_ID, SEASON, ESPN_S2 and ESPN_SWID
+in a gitignored .env at the repo root, or set them in the shell / CI secret
+store.
 """
 from __future__ import annotations
 
@@ -44,8 +45,8 @@ def load_config(season: int | None = None) -> Config:
     league_id = os.environ.get("LEAGUE_ID")
     if not league_id:
         raise SystemExit(
-            "LEAGUE_ID is not set. Copy .env.example to .env and fill it in, "
-            "or export LEAGUE_ID / SEASON / ESPN_S2 / ESPN_SWID."
+            "LEAGUE_ID is not set. Create a .env at the repo root, or export "
+            "LEAGUE_ID / SEASON / ESPN_S2 / ESPN_SWID."
         )
     return Config(
         league_id=int(league_id),

@@ -8,8 +8,19 @@ JSON and computes nothing, so the site can be rewritten without touching this.
 ```
 py -3 -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements.txt
-cp .env.example .env      # then fill it in
 ```
+
+Then create a `.env` in the repo root. It is gitignored, and a CI guard fails
+any push that commits a live value:
+
+```
+LEAGUE_ID=634388
+SEASON=2026
+ESPN_S2=<the espn_s2 cookie from a logged-in espn.com session>
+ESPN_SWID=<the SWID cookie, curly braces included>
+```
+
+In CI the same four live as repo secrets, except `SEASON`, which is a variable.
 
 ## Run
 

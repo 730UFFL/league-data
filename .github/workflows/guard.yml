@@ -1,7 +1,7 @@
 name: Guard
 
-# .env.example was once committed with a live ESPN_S2 cookie in it. This fails
-# the build rather than letting that reach a public repo again.
+# A live ESPN_S2 cookie once reached this repo inside .env.example. That file
+# is gone, so this scans every tracked file instead of trusting one path.
 on:
   push:
   pull_request:
@@ -11,22 +11,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: .env.example must hold placeholders only
+      - name: No live credentials in tracked files
         run: |
           fail=0
-          if [ -f .env ]; then
+          self=".github/workflows/guard.yml"
+
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
             echo "::error file=.env::.env is tracked; it must stay gitignored"
             fail=1
           fi
-          s2=$(grep -E '^ESPN_S2=' .env.example | cut -d= -f2-)
-          if [ -n "$s2" ]; then
-            echo "::error file=.env.example::ESPN_S2 is populated (${#s2} chars). Blank it; real values belong in .env or repo secrets."
+
+          # A populated ESPN_S2 anywhere. Real cookies run ~300 chars; 20 is
+          # well clear of variable names and placeholders.
+          if git grep -nIE "ESPN_S2[=:][^\"'[:space:]]{20,}" -- . ":!$self"; then
+            echo "::error::a populated ESPN_S2 value is committed (see matches above)"
             fail=1
           fi
-          swid=$(grep -E '^ESPN_SWID=' .env.example | cut -d= -f2-)
-          if [ -n "$swid" ] && [ "$swid" != "{00000000-0000-0000-0000-000000000000}" ]; then
-            echo "::error file=.env.example::ESPN_SWID is not the placeholder."
+
+          # A real SWID GUID, as opposed to the all-zero placeholder.
+          if git grep -nIE "\{[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}\}" -- . ":!$self" \
+               | grep -v "00000000-0000-0000-0000-000000000000"; then
+            echo "::error::a real SWID GUID is committed (see matches above)"
             fail=1
           fi
-          [ "$fail" = 0 ] && echo "ok: no live credentials in .env.example"
+
+          if [ "$fail" = 0 ]; then echo "ok: no live credentials in tracked files"; fi
           exit $fail
