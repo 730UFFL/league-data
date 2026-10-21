@@ -1200,6 +1200,12 @@ async function loadSeason(year) {
   state.quadWeek = null;
   state.forecastOrigin = null;
 
+  /* The league names itself, so a fork needs no edit here. */
+  if (data.league.name) {
+    const title = $('#league-name');
+    if (title) title.textContent = data.league.name;
+    document.title = data.league.name;
+  }
   $('#season-line').textContent =
     data.season + ' season · ' + data.league.team_count + ' teams · ' +
     data.league.weeks_played.length + ' weeks played';

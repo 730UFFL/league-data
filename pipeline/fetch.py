@@ -17,15 +17,43 @@ import json
 
 import pandas as pd
 from espn_api.football import League
+from espn_api.requests.espn_requests import ESPNAccessDenied, ESPNInvalidLeague
 
 from .config import RAW_DIR, load_config
 
 
 def connect(cfg) -> League:
+    """Open the league, public or private.
+
+    A public league needs nothing but its id; cookies are only sent when both
+    are set. ESPN's own errors are terse, so they are translated here into the
+    thing that is actually wrong.
+    """
     kwargs = {"league_id": cfg.league_id, "year": cfg.season}
     if cfg.is_private:
         kwargs.update(espn_s2=cfg.espn_s2, swid=cfg.swid)
-    return League(**kwargs)
+    try:
+        return League(**kwargs)
+    except ESPNInvalidLeague as exc:
+        raise SystemExit(
+            f"League {cfg.league_id} does not exist for {cfg.season}. Check LEAGUE_ID "
+            f"(the number in your ESPN league URL) and that the league ran that season."
+        ) from exc
+    except ESPNAccessDenied as exc:
+        if cfg.is_private:
+            raise SystemExit(
+                f"ESPN rejected the credentials for league {cfg.league_id}. ESPN_S2 "
+                "expires: sign in at fantasy.espn.com and copy the espn_s2 and SWID "
+                "cookies again."
+            ) from exc
+        # ESPN answers 401 for a league that is private *and* for one that does
+        # not exist, so this cannot tell them apart. Name both.
+        raise SystemExit(
+            f"ESPN refused league {cfg.league_id} for {cfg.season} without credentials. "
+            "Either the league is private - set ESPN_S2 and ESPN_SWID in .env, see the "
+            "README - or LEAGUE_ID is wrong. It is the number in your ESPN league URL, "
+            "and it must be a season the league actually played."
+        ) from exc
 
 
 def owner_name(team) -> str:
@@ -176,6 +204,19 @@ def main() -> None:
     league = connect(cfg)
     out_dir = RAW_DIR / str(cfg.season)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # The league names itself and declares its own playoff size, so nothing
+    # downstream has to be hardcoded for one league.
+    settings = league.settings
+    meta = {
+        "name": str(getattr(settings, "name", "") or ""),
+        "reg_season_count": int(getattr(settings, "reg_season_count", 14) or 14),
+        "playoff_team_count": int(getattr(settings, "playoff_team_count", 6) or 6),
+        "team_count": int(getattr(settings, "team_count", len(league.teams)) or len(league.teams)),
+    }
+    (out_dir / "meta.json").write_text(json.dumps(meta, indent=1), encoding="utf-8")
+    print(f"  league: {meta['name']!r}, {meta['team_count']} teams, "
+          f"{meta['reg_season_count']} weeks, {meta['playoff_team_count']} playoff spots")
 
     teams = teams_frame(league)
     teams.to_csv(out_dir / "teams.csv", index=False)

@@ -46,6 +46,17 @@ def _records(df: pd.DataFrame) -> list[dict]:
     return _clean(df.to_dict(orient="records"))
 
 
+def load_meta(season: int) -> dict:
+    """The league's own name and settings, if a fetch has recorded them."""
+    path = RAW_DIR / str(season) / "meta.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+
+
 def load_season(season: int, legacy: bool = False) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame | None]:
     """Return (completed matchups, full schedule, teams or None)."""
     if legacy:
@@ -76,8 +87,10 @@ def build(
     playoff_spots: int,
     n_sims: int,
     include_owners: bool = False,
+    meta: dict | None = None,
 ) -> dict:
     mu = M.validate(mu)
+    meta = meta or {}
     weeks = sorted(int(w) for w in mu["week"].unique())
     names = M.team_names(mu)
 
@@ -91,6 +104,7 @@ def build(
         "season": season,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "league": {
+            "name": meta.get("name", ""),
             "team_count": int(mu["team_id"].nunique()),
             "weeks_played": weeks,
             "scheduled_weeks": sorted(int(w) for w in schedule["week"].unique()),
@@ -186,7 +200,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Build site/data/{season}.json")
     parser.add_argument("--season", type=int, default=None)
     parser.add_argument("--legacy", action="store_true", help="use the 2025 CSVs in data/")
-    parser.add_argument("--playoff-spots", type=int, default=6)
+    parser.add_argument(
+        "--playoff-spots",
+        type=int,
+        default=None,
+        help="overrides the playoff size the league itself reports",
+    )
     parser.add_argument("--sims", type=int, default=5000)
     parser.add_argument("--out", type=Path, default=None)
     parser.add_argument(
@@ -203,8 +222,10 @@ def main() -> None:
         season = load_config().season
 
     mu, schedule, teams = load_season(season, legacy=args.legacy)
-    payload = build(mu, schedule, teams, season, args.playoff_spots, args.sims,
-                    include_owners=args.include_owners)
+    meta = {} if args.legacy else load_meta(season)
+    playoff_spots = args.playoff_spots or meta.get("playoff_team_count") or 6
+    payload = build(mu, schedule, teams, season, playoff_spots, args.sims,
+                    include_owners=args.include_owners, meta=meta)
 
     out = args.out or (SITE_DATA_DIR / f"{season}.json")
     out.parent.mkdir(parents=True, exist_ok=True)
