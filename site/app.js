@@ -122,6 +122,11 @@ function selectTeam(id) {
 /* Marks already carry a hover tooltip and keyboard focus; this makes them
    activate. Call after hoverable() so the button role wins. */
 function selectable(node, teamId) {
+  /* Marks carry tabindex so they are keyboard reachable, which means a tap
+     also focuses them - and the browser scrolls a newly focused element into
+     view, landing the reader at the top of the chart. Cancelling the default
+     on mousedown suppresses focus-on-pointer without touching Tab focus. */
+  node.addEventListener('mousedown', (ev) => ev.preventDefault());
   node.addEventListener('click', (ev) => {
     ev.preventDefault();
     selectTeam(teamId);
@@ -315,6 +320,7 @@ function tableEl(headers, rows) {
       tr.className = (tr.className + ' clickable').trim();
       tr.setAttribute('tabindex', '0');
       tr.setAttribute('title', (r.selected ? 'Clear highlight on ' : 'Highlight ') + teamName(r.team_id));
+      tr.addEventListener('mousedown', (ev) => ev.preventDefault());
       tr.addEventListener('click', () => selectTeam(r.team_id));
       tr.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
