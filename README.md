@@ -180,8 +180,7 @@ fails, a metric is wrong. A separate CI check fails any push carrying a live
 
 ## Licence
 
-No licence yet, so default copyright applies and others cannot reuse it. Add a
-`LICENSE` file if you want people to fork it freely.
+[MIT](LICENSE) — fork it, change it, use it for your own league.
 
 Not affiliated with ESPN. Uses the unofficial
-[espn_api](https://github.com/cwendt94/espn-api) client.
+[espn_api](https://github.com/cwendt94/espn-api) client, which is MIT too.
