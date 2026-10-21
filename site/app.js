@@ -509,7 +509,8 @@ function emphasisLines(series, opts) {
 
   gridY(f.g, y, niceTicks(lo, hi, 5), f.plotW, o.format);
   for (const w of weeks) {
-    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0 && w !== weeks[weeks.length - 1]) continue;
+    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0
+        && w !== weeks[0] && w !== weeks[weeks.length - 1]) continue;
     f.g.appendChild(el('text', { class: 'axis-label', x: x(w), y: f.plotH + 18, 'text-anchor': 'middle' }, String(w)));
   }
   f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: f.plotH, y2: f.plotH }));
@@ -944,7 +945,8 @@ function projectionTracker(origins, points, wins, opts) {
 
   gridY(f.g, y, niceTicks(lo, hi, 5), f.plotW, (t) => fmt(t, 0));
   for (let w = origins[0]; w <= xMax; w++) {
-    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0 && w !== xMax) continue;
+    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0
+        && w !== origins[0] && w !== xMax) continue;
     f.g.appendChild(el('text', { class: 'axis-label', x: x(w), y: f.plotH + 18, 'text-anchor': 'middle' }, String(w)));
   }
   f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: f.plotH, y2: f.plotH }));
@@ -974,7 +976,7 @@ function projectionTracker(origins, points, wins, opts) {
     for (const w of wins) {
       const hit = el('circle', { class: 'hit', cx: x(w.week), cy: y(w.cum), r: L.narrow ? 15 : 12 });
       hoverable(hit, 'Through week ' + w.week, [
-        'Record <b>' + rec(w.cum, w.week - w.cum) + '</b>',
+        'Record <b>' + rec(w.cum, w.losses) + '</b>',
         w.won === null ? '' : 'Week ' + w.week + ': <b>' + (w.won ? 'won' : 'lost') + '</b>',
       ].filter(Boolean));
       f.g.appendChild(hit);
@@ -1070,6 +1072,7 @@ views.forecast = () => {
       .map((r, i, all) => ({
         week: r.week,
         cum: r.cum_wins,
+        losses: r.cum_losses,
         won: i === 0 ? r.cum_wins > 0 : r.cum_wins > all[i - 1].cum_wins,
       }));
     const first = pts[0], last = pts[pts.length - 1];

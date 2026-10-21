@@ -92,6 +92,15 @@ def build(
     mu = M.validate(mu)
     meta = meta or {}
     weeks = sorted(int(w) for w in mu["week"].unique())
+    if not weeks:
+        # Every metric below needs at least one played week. Without this the
+        # failure is a KeyError from an empty groupby, which says nothing about
+        # the real cause: a season whose schedule exists but whose first week
+        # has not finished.
+        raise SystemExit(
+            f"No completed weeks yet for {season}. Nothing to compute until the "
+            f"first week's games have finished."
+        )
     names = M.team_names(mu)
 
     standings = M.standings(mu)
