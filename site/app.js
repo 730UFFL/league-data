@@ -917,13 +917,34 @@ views.forecast = () => {
 
 /* ---------------------------------------------------------------- shell */
 
-function render() {
+/* `toTop: true` for a change that makes the old scroll position meaningless -
+   switching view. Everything else (picking a team, a week, a season) keeps the
+   reader where they were. */
+function render(opts) {
   const main = $('#view');
+  const toTop = !!(opts && opts.toTop);
+  const scrollBefore = window.scrollY;
+
+  /* Emptying the container collapses the document - on a phone, 2355px down to
+     the 812px viewport - and the browser clamps the scroll position to that new
+     maximum. Restoring the content afterwards does not restore the scroll, so
+     tapping a mark threw the reader back to the top. Pin the height across the
+     swap so the page never shrinks. */
+  main.style.minHeight = main.offsetHeight + 'px';
   main.innerHTML = '';
   main.appendChild(views[state.view]());
   for (const svg of main.querySelectorAll('svg.chart')) {
     if (svg.__fixup) svg.__fixup();
   }
+  main.style.minHeight = '';
+
+  if (toTop) {
+    window.scrollTo(0, 0);
+  } else if (window.scrollY !== scrollBefore) {
+    /* Clamps on its own if the new view is shorter. */
+    window.scrollTo(0, scrollBefore);
+  }
+
   for (const tab of document.querySelectorAll('.tab')) {
     tab.setAttribute('aria-selected', tab.dataset.view === state.view ? 'true' : 'false');
   }
@@ -1022,7 +1043,7 @@ async function boot() {
   });
 
   for (const tab of document.querySelectorAll('.tab')) {
-    tab.addEventListener('click', () => { state.view = tab.dataset.view; render(); });
+    tab.addEventListener('click', () => { state.view = tab.dataset.view; render({ toTop: true }); });
   }
   const view = params.get('view');
   if (view && views[view]) state.view = view;
@@ -1042,7 +1063,7 @@ async function boot() {
     if (window.innerWidth === lastWidth) return;
     lastWidth = window.innerWidth;
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(render, 150);
+    resizeTimer = setTimeout(() => render(), 150);
   });
 
   applyTheme(null);
