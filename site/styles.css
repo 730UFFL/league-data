@@ -14,7 +14,7 @@
 
   --accent: #2a78d6;          /* the emphasised team */
   --accent-soft: #cde2fb;
-  --context: #c3c2b7;         /* every other team */
+  --context: #898781;         /* every other team; 3.5:1 on surface */
   --pole-pos: #2a78d6;        /* diverging: above expectation */
   --pole-neg: #e34948;        /* diverging: below expectation */
   --good: #0ca30c;
@@ -44,7 +44,7 @@
     --border: rgba(255, 255, 255, 0.10);
     --accent: #3987e5;
     --accent-soft: #184f95;
-    --context: #4a4a46;
+    --context: #7b7a71;
     --pole-pos: #3987e5;
     --pole-neg: #e66767;
     --seq-100: #184f95; --seq-250: #1c5cab; --seq-400: #2a78d6;
@@ -64,7 +64,7 @@
   --border: rgba(255, 255, 255, 0.10);
   --accent: #3987e5;
   --accent-soft: #184f95;
-  --context: #4a4a46;
+  --context: #7b7a71;
   --pole-pos: #3987e5;
   --pole-neg: #e66767;
   --seq-100: #184f95; --seq-250: #1c5cab; --seq-400: #2a78d6;
@@ -216,6 +216,16 @@ tbody tr.clickable.is-selected:hover td { background: var(--accent-soft); }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) tbody tr.is-selected td { color: var(--text-primary); } }
 td.pos { color: var(--good); }
 td.neg { color: var(--critical); }
+
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: var(--gap);
+}
+.filter-row label { font-size: 13px; color: var(--text-secondary); }
+.filter-row .hint { font-size: 12.5px; color: var(--text-muted); }
 
 details.table-view { margin-top: 14px; }
 details.table-view summary {

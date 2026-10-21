@@ -552,10 +552,13 @@ function emphasisLines(series, opts) {
 
   for (const s of context) {
     for (const seg of segments(s)) {
+      /* No opacity here. Dimming a 3.5:1 gray to 0.5 puts it back under 2:1,
+         which is the contrast problem this token was raised to fix. The
+         emphasis comes from weight and hue: 1.25px neutral against 2.5px
+         saturated. */
       f.g.appendChild(el('path', {
         d: pathOf(seg.pts), fill: 'none', stroke: 'var(--context)',
-        'stroke-width': 1.5, 'stroke-dasharray': seg.dash,
-        opacity: state.teamId ? 0.5 : 0.8,
+        'stroke-width': state.teamId ? 1.25 : 1.5, 'stroke-dasharray': seg.dash,
       }));
     }
   }
@@ -829,13 +832,26 @@ views.power = () => {
     points: rows.sort((a, b) => a.week - b.week).map((r) => ({ x: r.week, y: r.power_rank })),
   }));
 
-  const last = pr.filter((r) => r.week === Math.max(...pr.map((x) => x.week))).sort((a, b) => a.power_rank - b.power_rank);
+  const prWeeks = [...new Set(pr.map((r) => r.week))].sort((a, b) => a - b);
+  const last = pr.filter((r) => r.week === prWeeks[prWeeks.length - 1]).sort((a, b) => a.power_rank - b.power_rank);
   const wrap = document.createDocumentFragment();
   wrap.appendChild(
     card('Power ranking by week',
       'Rank 1 is at the top. Pick a team above to follow it through the season.',
       emphasisLegend(),
-      emphasisLines(series, { invertY: true, height: 400, format: (v) => '#' + fmt(v, 0) }))
+      emphasisLines(series, { invertY: true, height: 400, format: (v) => '#' + fmt(v, 0) }),
+      detailsTable('Table view: rank by week',
+        ['Team'].concat(prWeeks.map((w) => 'W' + w)),
+        [...byTeam.entries()].map(([team_id, rows]) => ({
+          team_id,
+          selected: isSel(team_id),
+          cells: [teamName(team_id)].concat(
+            prWeeks.map((w) => {
+              const r = rows.filter((x) => x.week === w)[0];
+              return r ? '#' + r.power_rank : '\u2013';
+            })
+          ),
+        }))))
   );
   wrap.appendChild(
     card('Final power ranking',
@@ -1043,7 +1059,10 @@ views.forecast = () => {
   const cut = fc.by_origin[String(origin)];
   const isLatest = origin === fc.latest;
 
-  const picker = h('div', { class: 'toolbar', style: 'padding-left:0;padding-top:0' },
+  /* One filter row above everything it scopes - the origin drives the race
+     chart, the tracker and the standings table, so it cannot live inside the
+     first card. */
+  const picker = h('div', { class: 'filter-row' },
     h('label', { for: 'fc-origin', text: 'Forecast from' }),
     h('select', {
       id: 'fc-origin',
@@ -1061,14 +1080,23 @@ views.forecast = () => {
     points: cut.race.map((r) => ({ x: r.week, y: r.avg_cumulative_wins[String(t.team_id)] || 0 })),
   }));
 
+  wrap.appendChild(picker);
   wrap.appendChild(
     card('Projected season race',
       'Average cumulative wins across ' + fc.n_sims.toLocaleString() +
       ' simulated seasons run from the state after week ' + origin +
       '. Solid is what was played, dashed is simulated. Scores are drawn from each team’s own scoring distribution — no player projections.',
-      picker,
       emphasisLegend(),
       emphasisLines(series, { height: 380, solidUntil: origin, format: (v) => fmt(v, 1) }),
+      detailsTable('Table view: cumulative wins by week',
+        ['Team'].concat(cut.race.map((r) => 'W' + r.week)),
+        state.data.teams.map((t) => ({
+          team_id: t.team_id,
+          selected: isSel(t.team_id),
+          cells: [t.name].concat(
+            cut.race.map((r) => fmt(r.avg_cumulative_wins[String(t.team_id)] || 0, 1))
+          ),
+        }))),
       caption(!isLatest
         ? 'Wound back to week ' + origin + ', so anything after it is ignored.'
         : fc.season_complete
@@ -1112,6 +1140,20 @@ views.forecast = () => {
           ['Wins after each week (solid)', 'var(--text-secondary)'],
         ]),
         projectionTracker(origins, pts, winsByWeek, { complete: fc.season_complete }),
+        detailsTable('Table view: projection by week',
+          ['After week', 'Projected final', 'Range (10\u201390%)', 'Playoff odds', 'Wins banked'],
+          origins.map((w, i) => {
+            const banked = winsByWeek.filter((r) => r.week === w)[0];
+            return {
+              cells: [
+                'Week ' + w,
+                fmt(pts[i].avg, 2),
+                fmt(pts[i].p10, 0) + '\u2013' + fmt(pts[i].p90, 0),
+                pct(pts[i].playoff_pct, 1),
+                banked ? String(banked.cum) : '\u2013',
+              ],
+            };
+          })),
         caption('Projected ' + fmt(first.avg, 2) + ' wins after week ' + origins[0] +
           ' and ' + fmt(last.avg, 2) + ' by week ' + origins[origins.length - 1] + '. ' +
           (fc.season_complete
