@@ -297,6 +297,17 @@ function legend(items) {
   return box;
 }
 
+/* Emphasis charts carry twelve lines but only two classes, so the legend is
+   two entries rather than twelve. With nothing highlighted there is only one
+   class and the title already names it, so no legend is drawn. */
+function emphasisLegend() {
+  if (state.teamId === null) return null;
+  return legend([
+    [shortName(state.teamId, 26), 'var(--accent)'],
+    ['Every other team', 'var(--context)'],
+  ]);
+}
+
 function card(title, note, ...body) {
   return h(
     'section',
@@ -480,7 +491,12 @@ function rangeBars(rows) {
     f.g.appendChild(
       el('rect', {
         x: x(r.lo), y: y - 6, width: Math.max(x(r.hi) - x(r.lo), 2), height: 12, rx: 4,
-        fill: 'var(--seq-100)', opacity: dim,
+        fill: 'var(--seq-100)', 'fill-opacity': dim,
+        /* The fill alone is 1.29:1 against the light surface - the bar that
+           carries this chart's whole point was close to invisible. An outline
+           at 3:1+ in both modes makes its extent readable without turning the
+           interior into a saturated block the actual-record dot competes with. */
+        stroke: 'var(--seq-400)', 'stroke-width': 1, 'stroke-opacity': dim,
       })
     );
     f.g.appendChild(
@@ -818,6 +834,7 @@ views.power = () => {
   wrap.appendChild(
     card('Power ranking by week',
       'Rank 1 is at the top. Pick a team above to follow it through the season.',
+      emphasisLegend(),
       emphasisLines(series, { invertY: true, height: 400, format: (v) => '#' + fmt(v, 0) }))
   );
   wrap.appendChild(
@@ -955,7 +972,11 @@ function projectionTracker(origins, points, wins, opts) {
   const bottom = points.map((p, i) => x(origins[i]) + ' ' + y(p.p10)).reverse();
   f.g.appendChild(el('path', {
     d: 'M' + top.join(' L') + ' L' + bottom.join(' L') + ' Z',
-    fill: 'var(--accent-soft)', opacity: 0.55,
+    /* Same reason as the schedule-luck bar, and worse here: at 0.55 alpha the
+       fill is ~1.15:1 and this chart has no table to fall back on. The outline
+       carries the band's edges; the fill stays quiet under the lines. */
+    fill: 'var(--accent-soft)', 'fill-opacity': 0.55,
+    stroke: 'var(--seq-400)', 'stroke-width': 1, 'stroke-opacity': 0.9,
   }));
 
   /* Wins arrive one game at a time, so they step rather than slope. */
@@ -1046,6 +1067,7 @@ views.forecast = () => {
       ' simulated seasons run from the state after week ' + origin +
       '. Solid is what was played, dashed is simulated. Scores are drawn from each team’s own scoring distribution — no player projections.',
       picker,
+      emphasisLegend(),
       emphasisLines(series, { height: 380, solidUntil: origin, format: (v) => fmt(v, 1) }),
       caption(!isLatest
         ? 'Wound back to week ' + origin + ', so anything after it is ignored.'
