@@ -86,7 +86,6 @@ def build(
     standings = standings.merge(sos, on="team_id", how="left")
 
     swap = M.schedule_swap(mu)
-    forecast_from = max(1, len(weeks) // 2)
 
     payload = {
         "season": season,
@@ -128,15 +127,32 @@ def build(
         ),
     }
 
-    payload["forecast"] = _clean(
-        M.simulate_season(
+    # One forecast per origin week rather than one from the season midpoint.
+    # The midpoint was a hindsight framing; on a season in progress it threw
+    # away every result after it. The site defaults to the latest origin, which
+    # is the actual forecast, and lets the reader wind it back.
+    last_origin = weeks[-1] if len(weeks) < len(payload["league"]["scheduled_weeks"]) else weeks[-2]
+    origins = [w for w in weeks if w <= last_origin]
+    by_origin = {}
+    for week in origins:
+        sim = M.simulate_season(
             mu,
             schedule,
-            through_week=forecast_from,
+            through_week=week,
             n_sims=n_sims,
             playoff_spots=playoff_spots,
         )
-    )
+        by_origin[str(week)] = _clean({"teams": sim["teams"], "race": sim["race"]})
+
+    payload["forecast"] = {
+        "n_sims": n_sims,
+        "playoff_spots": playoff_spots,
+        "total_weeks": len(payload["league"]["scheduled_weeks"]),
+        "season_complete": len(weeks) >= len(payload["league"]["scheduled_weeks"]),
+        "origins": [int(w) for w in origins],
+        "latest": int(origins[-1]) if origins else None,
+        "by_origin": by_origin,
+    }
     return payload
 
 

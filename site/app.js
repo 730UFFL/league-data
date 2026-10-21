@@ -10,7 +10,7 @@
 const NS = 'http://www.w3.org/2000/svg';
 const $ = (sel, root = document) => root.querySelector(sel);
 
-const state = { data: null, seasons: [], season: null, view: 'standings', teamId: null, quadWeek: null };
+const state = { data: null, seasons: [], season: null, view: 'standings', teamId: null, quadWeek: null, forecastOrigin: null };
 
 /* ---------------------------------------------------------------- utils */
 
@@ -883,24 +883,152 @@ views.quadrants = () => {
   return wrap;
 };
 
+/* One team's projected final win total as of each origin week, against what
+   actually happened. The question the forecast tab is really for: is this team
+   beating the expectation its own scoring set? */
+function projectionTracker(origins, points, actualLine, opts) {
+  const L = layout();
+  const o = Object.assign({ complete: true }, opts || {});
+  const f = frame(L.width, L.narrow ? 260 : 300,
+                  { left: L.narrow ? 32 : 40, right: 14, bottom: 34, top: 14 });
+
+  const vals = [];
+  for (const p of points) vals.push(p.p10, p.p90, p.avg);
+  vals.push(actualLine);
+  const lo = Math.max(0, Math.floor(Math.min.apply(null, vals) - 1));
+  const hi = Math.ceil(Math.max.apply(null, vals) + 1);
+  const x = linear([origins[0], origins[origins.length - 1]], [0, f.plotW]);
+  const y = linear([lo, hi], [f.plotH, 0]);
+
+  gridY(f.g, y, niceTicks(lo, hi, 5), f.plotW, (t) => fmt(t, 0));
+  for (const w of origins) {
+    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0 && w !== origins[origins.length - 1]) continue;
+    f.g.appendChild(el('text', { class: 'axis-label', x: x(w), y: f.plotH + 18, 'text-anchor': 'middle' }, String(w)));
+  }
+  f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: f.plotH, y2: f.plotH }));
+
+  const top = points.map((p, i) => x(origins[i]) + ' ' + y(p.p90));
+  const bottom = points.map((p, i) => x(origins[i]) + ' ' + y(p.p10)).reverse();
+  f.g.appendChild(el('path', {
+    d: 'M' + top.join(' L') + ' L' + bottom.join(' L') + ' Z',
+    fill: 'var(--accent-soft)', opacity: 0.55,
+  }));
+
+  f.g.appendChild(el('line', {
+    x1: 0, x2: f.plotW, y1: y(actualLine), y2: y(actualLine),
+    stroke: 'var(--text-secondary)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4',
+  }));
+  f.g.appendChild(el('text', {
+    class: 'mark-label', x: f.plotW - 2, y: y(actualLine) - 7, 'text-anchor': 'end',
+  }, (o.complete ? 'actual final ' : 'banked so far ') + fmt(actualLine, 0)));
+
+  const path = points.map((p, i) => (i ? 'L' : 'M') + x(origins[i]) + ' ' + y(p.avg)).join(' ');
+  f.g.appendChild(el('path', { d: path, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2.5 }));
+
+  points.forEach((p, i) => {
+    const cx = x(origins[i]), cy = y(p.avg);
+    f.g.appendChild(el('circle', {
+      cx, cy, r: 4, fill: 'var(--accent)', stroke: 'var(--surface-1)', 'stroke-width': 2,
+    }));
+    const hit = el('circle', { class: 'hit', cx, cy, r: L.narrow ? 16 : 13 });
+    hoverable(hit, 'After week ' + origins[i], [
+      'Projected final <b>' + fmt(p.avg, 2) + '</b> wins',
+      'Range <b>' + fmt(p.p10, 0) + '–' + fmt(p.p90, 0) + '</b>',
+      'Playoff odds <b>' + pct(p.playoff_pct, 1) + '</b>',
+    ]);
+    f.g.appendChild(hit);
+  });
+  return f.svg;
+}
+
 views.forecast = () => {
   const fc = state.data.forecast;
   const wrap = document.createDocumentFragment();
+  const origins = fc.origins || [];
 
-  const series = fc.race.length
-    ? state.data.teams.map((t) => ({
-        team_id: t.team_id,
-        points: fc.race.map((r) => ({ x: r.week, y: r.avg_cumulative_wins[String(t.team_id)] ?? 0 })),
-      }))
-    : [];
+  if (!origins.length) {
+    wrap.appendChild(card('Forecast', 'Not enough completed weeks to simulate from.'));
+    return wrap;
+  }
+  if (state.forecastOrigin === null || origins.indexOf(state.forecastOrigin) < 0) {
+    state.forecastOrigin = fc.latest;
+  }
+  const origin = state.forecastOrigin;
+  const cut = fc.by_origin[String(origin)];
+  const isLatest = origin === fc.latest;
+
+  const picker = h('div', { class: 'toolbar', style: 'padding-left:0;padding-top:0' },
+    h('label', { for: 'fc-origin', text: 'Forecast from' }),
+    h('select', {
+      id: 'fc-origin',
+      onchange: (ev) => { state.forecastOrigin = Number(ev.target.value); render(); },
+    }, origins.map((w) => h('option', {
+      value: w,
+      selected: w === origin ? 'selected' : null,
+      text: 'Week ' + w + (w === fc.latest ? ' (latest)' : ''),
+    }))),
+    h('span', { class: 'hint', text: 'of ' + fc.total_weeks + ' scheduled' })
+  );
+
+  const series = state.data.teams.map((t) => ({
+    team_id: t.team_id,
+    points: cut.race.map((r) => ({ x: r.week, y: r.avg_cumulative_wins[String(t.team_id)] || 0 })),
+  }));
 
   wrap.appendChild(
     card('Projected season race',
-      'Average cumulative wins across ' + fc.n_sims.toLocaleString() + ' simulated seasons, run from the state after week ' + fc.through_week + '. Scores are drawn from each team’s own scoring distribution — no player projections.',
-      series.length ? emphasisLines(series, { height: 380, format: (v) => fmt(v, 1) }) : h('p', { class: 'note', text: 'No simulated weeks.' }))
+      'Average cumulative wins across ' + fc.n_sims.toLocaleString() +
+      ' simulated seasons run from the state after week ' + origin +
+      '. Scores are drawn from each team’s own scoring distribution — no player projections.',
+      picker,
+      emphasisLines(series, { height: 380, format: (v) => fmt(v, 1) }),
+      caption(!isLatest
+        ? 'Wound back to week ' + origin + ', so anything after it is ignored.'
+        : fc.season_complete
+          ? 'The last week with games still to play. Wind it back to see the season from earlier on.'
+          : 'The live forecast: every result so far is counted.'))
   );
 
-  const rows = fc.teams.slice().sort((a, b) => b.avg_wins - a.avg_wins).map((r) => ({
+  if (state.teamId !== null) {
+    const pts = origins.map((w) => {
+      const rows = fc.by_origin[String(w)].teams;
+      const row = rows.filter((t) => t.team_id === state.teamId)[0];
+      return row
+        ? { avg: row.avg_wins, p10: row.win_p10, p90: row.win_p90, playoff_pct: row.playoff_pct }
+        : null;
+    }).filter(Boolean);
+
+    const st = state.data.standings.filter((r) => r.team_id === state.teamId)[0];
+    const actual = st ? st.wins : 0;
+    const first = pts[0], last = pts[pts.length - 1];
+    const gap = actual - first.avg;
+    const verdict = Math.abs(gap) < 0.5
+      ? 'essentially matching it.'
+      : (gap > 0 ? 'beating' : 'falling short of') + ' it by ' + fmt(Math.abs(gap), 1) + ' wins.';
+
+    wrap.appendChild(
+      card(teamName(state.teamId) + ' against its own projections',
+        'The line is the projected final win total as of each week; the band is the 10th to 90th percentile. Where it meets the dashed line is when the model caught on.',
+        legend([
+          ['Projected final wins', 'var(--accent)'],
+          ['10th–90th percentile', 'var(--accent-soft)'],
+          [fc.season_complete ? 'Actual final' : 'Banked so far', 'var(--context)'],
+        ]),
+        projectionTracker(origins, pts, actual, { complete: fc.season_complete }),
+        caption('Projected ' + fmt(first.avg, 2) + ' wins after week ' + origins[0] +
+          ' and ' + fmt(last.avg, 2) + ' by week ' + origins[origins.length - 1] + '. ' +
+          (fc.season_complete
+            ? 'Finished with ' + actual + ', ' + verdict
+            : 'Has banked ' + actual + ' with ' + (fc.total_weeks - state.data.league.weeks_played.length) + ' weeks left.')))
+    );
+  } else {
+    wrap.appendChild(
+      card('Track a team against its own projections',
+        'Pick a team above — or tap any mark — to see how its projected final win total moved as the season went on.')
+    );
+  }
+
+  const rows = cut.teams.slice().sort((a, b) => b.avg_wins - a.avg_wins).map((r) => ({
     team_id: r.team_id,
     selected: isSel(r.team_id),
     cells: [
@@ -915,8 +1043,10 @@ views.forecast = () => {
   }));
   wrap.appendChild(
     card('Projected standings',
-      'What the season looked like it would do from week ' + fc.through_week + ', against what it actually did. A low "same finish" means the second half went off script.',
-      tableEl(['Team', 'Actual', 'Avg wins', 'Range (10–90%)', 'Playoffs', 'Avg seed', 'Same finish'], rows))
+      (fc.season_complete
+        ? 'What the season looked like it would do from week ' + origin + ', against what it actually did. A low “same finish” means the rest went off script.'
+        : 'Where the season is heading from week ' + origin + '. “So far” is the record banked to date.'),
+      tableEl(['Team', fc.season_complete ? 'Actual' : 'So far', 'Avg wins', 'Range (10–90%)', 'Playoffs', 'Avg seed', fc.season_complete ? 'Same finish' : 'Holds seed'], rows))
   );
   return wrap;
 };
@@ -982,7 +1112,11 @@ function fail(message) {
 async function loadSeason(year) {
   let data;
   try {
-    const res = await fetch('data/' + year + '.json');
+    /* Revalidate rather than trust the cache. GitHub Pages serves these with
+       a ten-minute max-age, so after a refresh changes the JSON the page would
+       otherwise run new code against old data - and when the shape changes,
+       that is not stale, it is broken. A 304 costs almost nothing. */
+    const res = await fetch('data/' + year + '.json', { cache: 'no-cache' });
     if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
     data = await res.json();
   } catch (err) {
@@ -992,6 +1126,7 @@ async function loadSeason(year) {
   }
   state.data = data;
   state.quadWeek = null;
+  state.forecastOrigin = null;
 
   $('#season-line').textContent =
     data.season + ' season · ' + data.league.team_count + ' teams · ' +
@@ -1018,7 +1153,7 @@ async function boot() {
 
   let manifest;
   try {
-    const res = await fetch('data/seasons.json');
+    const res = await fetch('data/seasons.json', { cache: 'no-cache' });
     if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
     manifest = (await res.json()).seasons;
   } catch (err) {
