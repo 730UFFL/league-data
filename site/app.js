@@ -188,7 +188,10 @@ function layout() {
     const cs = getComputedStyle(view);
     avail = view.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   }
-  const width = Math.max(260, Math.min(760, avail - padX * 2 - 2));
+  /* No upper clamp. Building narrower than the box and letting the browser
+     stretch it is the same scaling bug in the other direction: text ends up
+     larger than its declared size rather than smaller. */
+  const width = Math.max(260, avail - padX * 2 - 2);
   const narrow = width < 460;
   return {
     width,
@@ -493,7 +496,7 @@ function rangeBars(rows) {
 /* Multi-line over weeks - one team emphasised, the rest context gray. */
 function emphasisLines(series, opts) {
   const L = layout();
-  const o = Object.assign({ invertY: false, height: 380, yLabel: '', format: (v) => fmt(v, 0) }, opts || {});
+  const o = Object.assign({ invertY: false, height: 380, yLabel: '', solidUntil: null, format: (v) => fmt(v, 0) }, opts || {});
   const f = frame(L.width, L.narrow ? Math.min(o.height, 300) : o.height,
                   { left: 40, right: L.markLabels ? 108 : 14, bottom: 34, top: 10 });
   const weeks = series[0].points.map((p) => p.x);
@@ -511,17 +514,48 @@ function emphasisLines(series, opts) {
   }
   f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: f.plotH, y2: f.plotH }));
 
-  const path = (s) => s.points.map((p, i) => (i ? 'L' : 'M') + x(p.x) + ' ' + y(p.y)).join(' ');
+  const pathOf = (pts) => pts.map((p, i) => (i ? 'L' : 'M') + x(p.x) + ' ' + y(p.y)).join(' ');
+  /* Everything up to solidUntil already happened; everything after it is
+     simulated. Drawing them as one line implies the whole thing is measured.
+     The segments share the boundary point so they meet without a gap. */
+  const segments = (s) => {
+    if (o.solidUntil === null || o.solidUntil === undefined) {
+      return [{ pts: s.points, dash: null }];
+    }
+    const played = s.points.filter((p) => p.x <= o.solidUntil);
+    const ahead = s.points.filter((p) => p.x >= o.solidUntil);
+    const out = [];
+    if (played.length > 1) out.push({ pts: played, dash: null });
+    if (ahead.length > 1) out.push({ pts: ahead, dash: '5 4' });
+    if (!out.length) out.push({ pts: s.points, dash: null });
+    return out;
+  };
   const context = series.filter((s) => !isSel(s.team_id));
   const focus = series.filter((s) => isSel(s.team_id));
 
   for (const s of context) {
-    f.g.appendChild(el('path', { d: path(s), fill: 'none', stroke: 'var(--context)', 'stroke-width': 1.5, opacity: state.teamId ? 0.5 : 0.8 }));
+    for (const seg of segments(s)) {
+      f.g.appendChild(el('path', {
+        d: pathOf(seg.pts), fill: 'none', stroke: 'var(--context)',
+        'stroke-width': 1.5, 'stroke-dasharray': seg.dash,
+        opacity: state.teamId ? 0.5 : 0.8,
+      }));
+    }
   }
   for (const s of focus) {
-    f.g.appendChild(el('path', { d: path(s), fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2.5 }));
+    for (const seg of segments(s)) {
+      f.g.appendChild(el('path', {
+        d: pathOf(seg.pts), fill: 'none', stroke: 'var(--accent)',
+        'stroke-width': 2.5, 'stroke-dasharray': seg.dash,
+      }));
+    }
     for (const p of s.points) {
-      f.g.appendChild(el('circle', { cx: x(p.x), cy: y(p.y), r: 4, fill: 'var(--accent)', stroke: 'var(--surface-1)', 'stroke-width': 2 }));
+      const projected = o.solidUntil !== null && o.solidUntil !== undefined && p.x > o.solidUntil;
+      f.g.appendChild(el('circle', {
+        cx: x(p.x), cy: y(p.y), r: 4,
+        fill: projected ? 'var(--surface-1)' : 'var(--accent)',
+        stroke: 'var(--accent)', 'stroke-width': 2,
+      }));
     }
   }
 
@@ -814,7 +848,8 @@ views.quadrants = () => {
   );
 
   const L = layout();
-  const quadH = L.narrow ? Math.round(L.width * 1.05) + 60 : 460;
+  const quadH = L.narrow ? Math.round(L.width * 1.05) + 60
+                        : Math.round(Math.min(560, Math.max(420, L.width * 0.66)));
   const f = frame(L.width, quadH,
                   { left: L.narrow ? 38 : 56, right: L.narrow ? 14 : 24, bottom: 44, top: 16 });
   const pf = pts.map((p) => p.cum_pf), pa = pts.map((p) => p.cum_pa);
@@ -886,23 +921,30 @@ views.quadrants = () => {
 /* One team's projected final win total as of each origin week, against what
    actually happened. The question the forecast tab is really for: is this team
    beating the expectation its own scoring set? */
-function projectionTracker(origins, points, actualLine, opts) {
+function projectionTracker(origins, points, wins, opts) {
   const L = layout();
   const o = Object.assign({ complete: true }, opts || {});
-  const f = frame(L.width, L.narrow ? 260 : 300,
-                  { left: L.narrow ? 32 : 40, right: 14, bottom: 34, top: 14 });
+  const f = frame(L.width, L.narrow ? 270 : 310,
+                  { left: L.narrow ? 32 : 40, right: 14, bottom: 34, top: 16 });
+
+  /* The projection line stops at the last origin, but the wins line runs to
+     the last week played - which on a finished season is one further. Give the
+     axis the wider of the two so the wins line reaches its real total. */
+  const lastOrigin = origins[origins.length - 1];
+  const lastWeek = wins.length ? wins[wins.length - 1].week : lastOrigin;
+  const xMax = Math.max(lastOrigin, lastWeek);
 
   const vals = [];
   for (const p of points) vals.push(p.p10, p.p90, p.avg);
-  vals.push(actualLine);
+  for (const w of wins) vals.push(w.cum);
   const lo = Math.max(0, Math.floor(Math.min.apply(null, vals) - 1));
   const hi = Math.ceil(Math.max.apply(null, vals) + 1);
-  const x = linear([origins[0], origins[origins.length - 1]], [0, f.plotW]);
+  const x = linear([origins[0], xMax], [0, f.plotW]);
   const y = linear([lo, hi], [f.plotH, 0]);
 
   gridY(f.g, y, niceTicks(lo, hi, 5), f.plotW, (t) => fmt(t, 0));
-  for (const w of origins) {
-    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0 && w !== origins[origins.length - 1]) continue;
+  for (let w = origins[0]; w <= xMax; w++) {
+    if (L.weekTickEvery > 1 && w % L.weekTickEvery !== 0 && w !== xMax) continue;
     f.g.appendChild(el('text', { class: 'axis-label', x: x(w), y: f.plotH + 18, 'text-anchor': 'middle' }, String(w)));
   }
   f.g.appendChild(el('line', { class: 'baseline', x1: 0, x2: f.plotW, y1: f.plotH, y2: f.plotH }));
@@ -914,24 +956,44 @@ function projectionTracker(origins, points, actualLine, opts) {
     fill: 'var(--accent-soft)', opacity: 0.55,
   }));
 
-  f.g.appendChild(el('line', {
-    x1: 0, x2: f.plotW, y1: y(actualLine), y2: y(actualLine),
-    stroke: 'var(--text-secondary)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4',
-  }));
-  f.g.appendChild(el('text', {
-    class: 'mark-label', x: f.plotW - 2, y: y(actualLine) - 7, 'text-anchor': 'end',
-  }, (o.complete ? 'actual final ' : 'banked so far ') + fmt(actualLine, 0)));
+  /* Wins arrive one game at a time, so they step rather than slope. */
+  if (wins.length) {
+    let d = 'M' + x(wins[0].week) + ' ' + y(wins[0].cum);
+    for (let i = 1; i < wins.length; i++) {
+      d += ' L' + x(wins[i].week) + ' ' + y(wins[i - 1].cum)
+         + ' L' + x(wins[i].week) + ' ' + y(wins[i].cum);
+    }
+    f.g.appendChild(el('path', {
+      d, fill: 'none', stroke: 'var(--text-secondary)', 'stroke-width': 2,
+    }));
+    const last = wins[wins.length - 1];
+    f.g.appendChild(el('text', {
+      class: 'mark-label strong', x: x(last.week) - 2, y: y(last.cum) - 8, 'text-anchor': 'end',
+    }, last.cum + (last.cum === 1 ? ' win' : ' wins')));
+
+    for (const w of wins) {
+      const hit = el('circle', { class: 'hit', cx: x(w.week), cy: y(w.cum), r: L.narrow ? 15 : 12 });
+      hoverable(hit, 'Through week ' + w.week, [
+        'Record <b>' + rec(w.cum, w.week - w.cum) + '</b>',
+        w.won === null ? '' : 'Week ' + w.week + ': <b>' + (w.won ? 'won' : 'lost') + '</b>',
+      ].filter(Boolean));
+      f.g.appendChild(hit);
+    }
+  }
 
   const path = points.map((p, i) => (i ? 'L' : 'M') + x(origins[i]) + ' ' + y(p.avg)).join(' ');
-  f.g.appendChild(el('path', { d: path, fill: 'none', stroke: 'var(--accent)', 'stroke-width': 2.5 }));
+  f.g.appendChild(el('path', {
+    d: path, fill: 'none', stroke: 'var(--accent)',
+    'stroke-width': 2.5, 'stroke-dasharray': '5 4',
+  }));
 
   points.forEach((p, i) => {
     const cx = x(origins[i]), cy = y(p.avg);
     f.g.appendChild(el('circle', {
-      cx, cy, r: 4, fill: 'var(--accent)', stroke: 'var(--surface-1)', 'stroke-width': 2,
+      cx, cy, r: 4, fill: 'var(--surface-1)', stroke: 'var(--accent)', 'stroke-width': 2,
     }));
     const hit = el('circle', { class: 'hit', cx, cy, r: L.narrow ? 16 : 13 });
-    hoverable(hit, 'After week ' + origins[i], [
+    hoverable(hit, 'Forecast after week ' + origins[i], [
       'Projected final <b>' + fmt(p.avg, 2) + '</b> wins',
       'Range <b>' + fmt(p.p10, 0) + '–' + fmt(p.p90, 0) + '</b>',
       'Playoff odds <b>' + pct(p.playoff_pct, 1) + '</b>',
@@ -940,6 +1002,7 @@ function projectionTracker(origins, points, actualLine, opts) {
   });
   return f.svg;
 }
+
 
 views.forecast = () => {
   const fc = state.data.forecast;
@@ -979,9 +1042,9 @@ views.forecast = () => {
     card('Projected season race',
       'Average cumulative wins across ' + fc.n_sims.toLocaleString() +
       ' simulated seasons run from the state after week ' + origin +
-      '. Scores are drawn from each team’s own scoring distribution — no player projections.',
+      '. Solid is what was played, dashed is simulated. Scores are drawn from each team’s own scoring distribution — no player projections.',
       picker,
-      emphasisLines(series, { height: 380, format: (v) => fmt(v, 1) }),
+      emphasisLines(series, { height: 380, solidUntil: origin, format: (v) => fmt(v, 1) }),
       caption(!isLatest
         ? 'Wound back to week ' + origin + ', so anything after it is ignored.'
         : fc.season_complete
@@ -1000,6 +1063,15 @@ views.forecast = () => {
 
     const st = state.data.standings.filter((r) => r.team_id === state.teamId)[0];
     const actual = st ? st.wins : 0;
+    /* quad already carries cumulative wins per team per week. */
+    const winsByWeek = state.data.quad
+      .filter((r) => r.team_id === state.teamId)
+      .sort((a, b) => a.week - b.week)
+      .map((r, i, all) => ({
+        week: r.week,
+        cum: r.cum_wins,
+        won: i === 0 ? r.cum_wins > 0 : r.cum_wins > all[i - 1].cum_wins,
+      }));
     const first = pts[0], last = pts[pts.length - 1];
     const gap = actual - first.avg;
     const verdict = Math.abs(gap) < 0.5
@@ -1008,13 +1080,13 @@ views.forecast = () => {
 
     wrap.appendChild(
       card(teamName(state.teamId) + ' against its own projections',
-        'The line is the projected final win total as of each week; the band is the 10th to 90th percentile. Where it meets the dashed line is when the model caught on.',
+        'Dashed is projected, solid is what happened. The dashed line is the projected final win total as of each week, with its 10th to 90th percentile band; the stepped line is wins actually banked. Where they meet is when the model caught on.',
         legend([
-          ['Projected final wins', 'var(--accent)'],
+          ['Projected final wins (dashed)', 'var(--accent)'],
           ['10th–90th percentile', 'var(--accent-soft)'],
-          [fc.season_complete ? 'Actual final' : 'Banked so far', 'var(--context)'],
+          ['Wins after each week (solid)', 'var(--text-secondary)'],
         ]),
-        projectionTracker(origins, pts, actual, { complete: fc.season_complete }),
+        projectionTracker(origins, pts, winsByWeek, { complete: fc.season_complete }),
         caption('Projected ' + fmt(first.avg, 2) + ' wins after week ' + origins[0] +
           ' and ' + fmt(last.avg, 2) + ' by week ' + origins[origins.length - 1] + '. ' +
           (fc.season_complete
