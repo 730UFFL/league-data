@@ -108,6 +108,38 @@ function hoverable(node, title, rows) {
   return node;
 }
 
+/* Selecting a team from a mark. Clicking the highlighted team clears it, so
+   the same gesture toggles rather than stranding the reader with no way back
+   except the dropdown. */
+function selectTeam(id) {
+  state.teamId = state.teamId === id ? null : id;
+  const sel = $('#team-select');
+  if (sel) sel.value = state.teamId === null ? '' : String(state.teamId);
+  tip.hide();
+  render();
+}
+
+/* Marks already carry a hover tooltip and keyboard focus; this makes them
+   activate. Call after hoverable() so the button role wins. */
+function selectable(node, teamId) {
+  node.addEventListener('click', (ev) => {
+    ev.preventDefault();
+    selectTeam(teamId);
+  });
+  node.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+      ev.preventDefault();
+      selectTeam(teamId);
+    }
+  });
+  node.setAttribute('role', 'button');
+  const label = node.getAttribute('aria-label') || teamName(teamId);
+  node.setAttribute('aria-label', label + '. ' +
+    (isSel(teamId) ? 'Highlighted; activate to clear.' : 'Activate to highlight.'));
+  node.setAttribute('aria-pressed', isSel(teamId) ? 'true' : 'false');
+  return node;
+}
+
 /* ---------------------------------------------------------------- scales */
 
 function linear(domain, range) {
@@ -239,6 +271,18 @@ function tableEl(headers, rows) {
   const tbody = h('tbody');
   for (const r of rows) {
     const tr = h('tr', r.selected ? { class: 'is-selected' } : {});
+    if (r.team_id !== undefined && r.team_id !== null) {
+      tr.className = (tr.className + ' clickable').trim();
+      tr.setAttribute('tabindex', '0');
+      tr.setAttribute('title', (r.selected ? 'Clear highlight on ' : 'Highlight ') + teamName(r.team_id));
+      tr.addEventListener('click', () => selectTeam(r.team_id));
+      tr.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' || ev.key === ' ' || ev.key === 'Spacebar') {
+          ev.preventDefault();
+          selectTeam(r.team_id);
+        }
+      });
+    }
     r.cells.forEach((c, i) => {
       const cell = c !== null && typeof c === 'object' ? c : { text: String(c) };
       const cls = [i ? '' : 'left', cell.cls || ''].join(' ').trim();
@@ -312,7 +356,7 @@ function divergingBars(rows, opts) {
     valueLabels.push({ node: valLabel, end, positive });
 
     const hit = el('rect', { class: 'hit', x: -o.labelW, y: y - 4, width: f.plotW + o.labelW, height: o.rowH });
-    hoverable(hit, teamName(r.team_id), r.rows);
+    selectable(hoverable(hit, teamName(r.team_id), r.rows), r.team_id);
     f.g.appendChild(hit);
   });
 
@@ -360,7 +404,7 @@ function dumbbell(rows, opts) {
     f.g.appendChild(el('circle', { cx: x(r.a), cy: y, r: 5, fill: 'var(--seq-250)', stroke: 'var(--surface-1)', 'stroke-width': 2, opacity: dim }));
     f.g.appendChild(el('circle', { cx: x(r.b), cy: y, r: 5, fill: 'var(--seq-550)', stroke: 'var(--surface-1)', 'stroke-width': 2, opacity: dim }));
     const hit = el('rect', { class: 'hit', x: -o.labelW, y: i * o.rowH, width: f.plotW + o.labelW, height: o.rowH });
-    hoverable(hit, teamName(r.team_id), r.rows);
+    selectable(hoverable(hit, teamName(r.team_id), r.rows), r.team_id);
     f.g.appendChild(hit);
   });
   return f.svg;
@@ -392,7 +436,7 @@ function rangeBars(rows) {
       el('circle', { cx: x(r.actual), cy: y, r: 6, fill: markColor(r.team_id), stroke: 'var(--surface-1)', 'stroke-width': 2, opacity: dim })
     );
     const hit = el('rect', { class: 'hit', x: -labelW, y: i * rowH, width: f.plotW + labelW, height: rowH });
-    hoverable(hit, teamName(r.team_id), r.rows);
+    selectable(hoverable(hit, teamName(r.team_id), r.rows), r.team_id);
     f.g.appendChild(hit);
   });
   return f.svg;
@@ -471,6 +515,28 @@ function emphasisLines(series, opts) {
     tip.show(ev.clientX, ev.clientY, 'Week ' + best, at);
   });
   overlay.addEventListener('mouseleave', () => { crosshair.setAttribute('opacity', 0); tip.hide(); });
+
+  /* The overlay covers every line, so a click has to work out which one was
+     meant: nearest week first, then the closest series at that week. */
+  overlay.addEventListener('click', (ev) => {
+    const box = overlay.getBoundingClientRect();
+    const relX = ((ev.clientX - box.left) / box.width) * f.plotW;
+    const relY = ((ev.clientY - box.top) / box.height) * f.plotH;
+    let week = weeks[0], weekD = Infinity;
+    for (const w of weeks) {
+      const d = Math.abs(x(w) - relX);
+      if (d < weekD) { weekD = d; week = w; }
+    }
+    let pick = null, pickD = Infinity;
+    for (const sr of series) {
+      const pt = sr.points.find((q) => q.x === week);
+      if (!pt) continue;
+      const d = Math.abs(y(pt.y) - relY);
+      if (d < pickD) { pickD = d; pick = sr; }
+    }
+    if (pick) selectTeam(pick.team_id);
+  });
+  overlay.style.cursor = 'pointer';
   f.g.appendChild(overlay);
   return f.svg;
 }
@@ -496,6 +562,7 @@ views.standings = () => {
   );
 
   const rows = st.map((r) => ({
+    team_id: r.team_id,
     selected: isSel(r.team_id),
     cells: [
       r.rank + '. ' + teamName(r.team_id),
@@ -556,6 +623,7 @@ views.expected = () => {
   );
 
   const rows = st.slice().sort((a, b) => b.expected_wins - a.expected_wins).map((r) => ({
+    team_id: r.team_id,
     selected: isSel(r.team_id),
     cells: [
       teamName(r.team_id),
@@ -623,6 +691,7 @@ views.schedule = () => {
   );
 
   const tbl = sw.summary.slice().sort((a, b) => b.actual_wins - a.actual_wins).map((r) => ({
+    team_id: r.team_id,
     selected: isSel(r.team_id),
     cells: [
       teamName(r.team_id),
@@ -666,6 +735,7 @@ views.power = () => {
       'Score = ((average score × 6) + ((high + low) × 2) + (win % × 400)) ÷ 10',
       tableEl(['Team', 'Rank', 'Score', 'Avg', 'High', 'Low', 'Win %'],
         last.map((r) => ({
+          team_id: r.team_id,
           selected: isSel(r.team_id),
           cells: [teamName(r.team_id), '#' + r.power_rank, fmt(r.power_score, 1), fmt(r.avg_score, 1), fmt(r.high, 1), fmt(r.low, 1), pct(r.win_pct)],
         }))))
@@ -730,6 +800,7 @@ views.quadrants = () => {
       'Points for <b>' + fmt(p.cum_pf, 1) + '</b>',
       'Points against <b>' + fmt(p.cum_pa, 1) + '</b>',
     ]);
+    selectable(hit, p.team_id);
     f.g.appendChild(hit);
   }
   f.g.appendChild(el('text', { class: 'axis-label', x: f.plotW / 2, y: f.plotH + 34, 'text-anchor': 'middle' }, 'Points for →'));
@@ -742,6 +813,7 @@ views.quadrants = () => {
       slider, f.svg,
       detailsTable('Table view', ['Team', 'PF', 'PA', 'Record', 'Quadrant'],
         pts.slice().sort((a, b) => b.cum_pf - a.cum_pf).map((p) => ({
+          team_id: p.team_id,
           selected: isSel(p.team_id),
           cells: [teamName(p.team_id), fmt(p.cum_pf, 1), fmt(p.cum_pa, 1), rec(p.cum_wins, p.cum_losses), p.quadrant],
         }))))
@@ -767,6 +839,7 @@ views.forecast = () => {
   );
 
   const rows = fc.teams.slice().sort((a, b) => b.avg_wins - a.avg_wins).map((r) => ({
+    team_id: r.team_id,
     selected: isSel(r.team_id),
     cells: [
       teamName(r.team_id),
